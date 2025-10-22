@@ -548,8 +548,8 @@ wheels = [
 ]
 
 [[package]]
-name = "vault-pydantic-simple"
-version = "0.5.0"
+name = "vltconfig"
+version = "1.0.0"
 source = { editable = "." }
 dependencies = [
     { name = "hvac" },

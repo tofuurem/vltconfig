@@ -1,0 +1,6 @@
+{
+  "database_url": "postgresql://localhost:5432/mydb",
+  "api_key": "json-config-key",
+  "debug": true,
+  "max_connections": 20
+}

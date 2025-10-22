@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from vlt.json_source import PydanticJSONSource
+from vltconfig.json_source import PydanticJSONSource
 
 
 @pytest.mark.unit
@@ -32,7 +32,9 @@ class TestPydanticJSONSource:
         assert result["api_key"] == "json-api-key"
         assert result["debug"] is False
 
-    def test_missing_file_trace_not_error(self, tmp_path: Path, clean_env: None) -> None:
+    def test_missing_file_trace_not_error(
+        self, tmp_path: Path, clean_env: None
+    ) -> None:
         """Test that missing config.json uses trace logging, not error.
 
         :param tmp_path: Pytest temporary directory

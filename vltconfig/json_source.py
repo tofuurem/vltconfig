@@ -7,7 +7,7 @@ from pydantic_settings import PydanticBaseSettingsSource, BaseSettings
 
 from pydantic.fields import FieldInfo
 
-from vlt.constants import PYDANTIC_JSON_PATH
+from vltconfig.constants import PYDANTIC_JSON_PATH
 
 
 class PydanticJSONSource(PydanticBaseSettingsSource):

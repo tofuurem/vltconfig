@@ -16,7 +16,7 @@ from pydantic_settings import BaseSettings, PydanticBaseSettingsSource
 
 import hvac
 
-from vlt.config import VaultAccess
+from vltconfig.config import VaultAccess
 
 
 def _log_retry_attempt(retry_state: RetryCallState) -> None:
@@ -60,7 +60,11 @@ def _authenticate_vault(cfg: VaultAccess) -> hvac.Client:
                 raise ValueError("Token is invalid or expired")
             logger.trace("Successfully authenticated with token")
             return client
-        except (ValueError, hvac.exceptions.Forbidden, hvac.exceptions.Unauthorized) as ex:
+        except (
+            ValueError,
+            hvac.exceptions.Forbidden,
+            hvac.exceptions.Unauthorized,
+        ) as ex:
             error_msg = f"Token auth failed: {ex}"
             errors.append(error_msg)
             logger.trace("Token authentication failed, trying next method: {}", ex)
@@ -123,7 +127,11 @@ class PydanticVaultSource(PydanticBaseSettingsSource):
         self._result_config: dict[str, str | int | float | bool] = {}
 
         # Allow disabling cache via environment variable
-        cache_disabled = os.getenv("VAULT_CACHE_DISABLED", "").lower() in ("true", "1", "yes")
+        cache_disabled = os.getenv("VAULT_CACHE_DISABLED", "").lower() in (
+            "true",
+            "1",
+            "yes",
+        )
         if cache_disabled:
             PydanticVaultSource._cache_enabled = False
 
@@ -188,7 +196,9 @@ class PydanticVaultSource(PydanticBaseSettingsSource):
         )
         self._result_config = secret["data"]["data"]
 
-        logger.info("Successfully loaded {} secrets from Vault", len(self._result_config))
+        logger.info(
+            "Successfully loaded {} secrets from Vault", len(self._result_config)
+        )
 
     def __call__(self) -> dict[str, str | int | float | bool]:
         """Load configuration from Vault with caching support.
@@ -196,9 +206,21 @@ class PydanticVaultSource(PydanticBaseSettingsSource):
         Caches secrets for TTL seconds to reduce Vault load.
         Cache can be disabled via VAULT_CACHE_DISABLED env var.
 
+        If Vault configuration is not available (missing env vars),
+        returns empty dict and allows other sources to provide values.
+
         :return: Dictionary of configuration key-value pairs
         """
-        cfg = VaultAccess()  # type: ignore[call-arg]
+        # Try to create VaultAccess configuration
+        try:
+            cfg = VaultAccess()  # type: ignore[call-arg]
+        except Exception as ex:
+            # Vault configuration not available (missing env vars or validation error)
+            logger.trace(
+                "Vault configuration not available, skipping Vault source: {}", ex
+            )
+            return self._result_config
+
         cache_key = f"{cfg.address}:{cfg.app_name}:{cfg.mount_point}"
 
         # Check cache if enabled
@@ -230,7 +252,11 @@ class PydanticVaultSource(PydanticBaseSettingsSource):
             # Store in cache if enabled
             if self._cache_enabled:
                 self._cache[cache_key] = (self._result_config.copy(), datetime.now())
-                logger.trace("Cached secrets for {} (TTL: {}s)", cache_key, self._cache_ttl_seconds)
+                logger.trace(
+                    "Cached secrets for {} (TTL: {}s)",
+                    cache_key,
+                    self._cache_ttl_seconds,
+                )
 
         except hvac.exceptions.Forbidden as ex:
             logger.error("Access denied to Vault: {}", ex)

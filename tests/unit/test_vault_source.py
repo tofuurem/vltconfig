@@ -7,14 +7,14 @@ from unittest.mock import Mock, patch
 import hvac.exceptions
 import pytest
 
-from vlt.vault_source import PydanticVaultSource, _authenticate_vault
+from vltconfig.vault_source import PydanticVaultSource, _authenticate_vault
 
 
 @pytest.mark.unit
 class TestAuthenticateVault:
     """Tests for _authenticate_vault function."""
 
-    @patch("vlt.vault_source.hvac.Client")
+    @patch("vltconfig.vault_source.hvac.Client")
     def test_token_authentication_success(
         self, mock_client_class: Mock, vault_env_vars: dict[str, str], clean_env: None
     ) -> None:
@@ -30,7 +30,7 @@ class TestAuthenticateVault:
         mock_client.is_authenticated.return_value = True
         mock_client_class.return_value = mock_client
 
-        from vlt.config import VaultAccess
+        from vltconfig.config import VaultAccess
 
         cfg = VaultAccess()
         client = _authenticate_vault(cfg)
@@ -38,7 +38,7 @@ class TestAuthenticateVault:
         assert client == mock_client
         mock_client.is_authenticated.assert_called_once()
 
-    @patch("vlt.vault_source.hvac.Client")
+    @patch("vltconfig.vault_source.hvac.Client")
     def test_token_authentication_failure(
         self, mock_client_class: Mock, vault_env_vars: dict[str, str], clean_env: None
     ) -> None:
@@ -54,14 +54,14 @@ class TestAuthenticateVault:
         mock_client.is_authenticated.return_value = False
         mock_client_class.return_value = mock_client
 
-        from vlt.config import VaultAccess
+        from vltconfig.config import VaultAccess
 
         cfg = VaultAccess()
 
         with pytest.raises(ValueError, match="All authentication methods failed"):
             _authenticate_vault(cfg)
 
-    @patch("vlt.vault_source.hvac.Client")
+    @patch("vltconfig.vault_source.hvac.Client")
     def test_userpass_authentication_success(
         self,
         mock_client_class: Mock,
@@ -82,7 +82,7 @@ class TestAuthenticateVault:
         }
         mock_client_class.return_value = mock_client
 
-        from vlt.config import VaultAccess
+        from vltconfig.config import VaultAccess
 
         cfg = VaultAccess()
         client = _authenticate_vault(cfg)
@@ -93,7 +93,7 @@ class TestAuthenticateVault:
             username="test-user", password="test-password"
         )
 
-    @patch("vlt.vault_source.hvac.Client")
+    @patch("vltconfig.vault_source.hvac.Client")
     def test_approle_authentication_success(
         self, mock_client_class: Mock, vault_env_vars: dict[str, str], clean_env: None
     ) -> None:
@@ -116,7 +116,7 @@ class TestAuthenticateVault:
         }
         mock_client_class.return_value = mock_client
 
-        from vlt.config import VaultAccess
+        from vltconfig.config import VaultAccess
 
         cfg = VaultAccess()
         client = _authenticate_vault(cfg)
@@ -127,7 +127,7 @@ class TestAuthenticateVault:
             role_id="test-role-id", secret_id="test-secret-id"
         )
 
-    @patch("vlt.vault_source.hvac.Client")
+    @patch("vltconfig.vault_source.hvac.Client")
     def test_approle_authentication_failure(
         self, mock_client_class: Mock, vault_env_vars: dict[str, str], clean_env: None
     ) -> None:
@@ -149,14 +149,14 @@ class TestAuthenticateVault:
         )
         mock_client_class.return_value = mock_client
 
-        from vlt.config import VaultAccess
+        from vltconfig.config import VaultAccess
 
         cfg = VaultAccess()
 
         with pytest.raises(ValueError, match="All authentication methods failed"):
             _authenticate_vault(cfg)
 
-    @patch("vlt.vault_source.hvac.Client")
+    @patch("vltconfig.vault_source.hvac.Client")
     def test_token_takes_precedence_over_approle(
         self, mock_client_class: Mock, vault_env_vars: dict[str, str], clean_env: None
     ) -> None:
@@ -176,7 +176,7 @@ class TestAuthenticateVault:
         mock_client.is_authenticated.return_value = True
         mock_client_class.return_value = mock_client
 
-        from vlt.config import VaultAccess
+        from vltconfig.config import VaultAccess
 
         cfg = VaultAccess()
         client = _authenticate_vault(cfg)
@@ -185,7 +185,7 @@ class TestAuthenticateVault:
         assert client.token == "s.test-token"
         mock_client.auth.approle.login.assert_not_called()
 
-    @patch("vlt.vault_source.hvac.Client")
+    @patch("vltconfig.vault_source.hvac.Client")
     def test_approle_takes_precedence_over_userpass(
         self, mock_client_class: Mock, vault_env_vars: dict[str, str], clean_env: None
     ) -> None:
@@ -209,7 +209,7 @@ class TestAuthenticateVault:
         }
         mock_client_class.return_value = mock_client
 
-        from vlt.config import VaultAccess
+        from vltconfig.config import VaultAccess
 
         cfg = VaultAccess()
         client = _authenticate_vault(cfg)
@@ -219,7 +219,7 @@ class TestAuthenticateVault:
         mock_client.auth.approle.login.assert_called_once()
         mock_client.auth.userpass.login.assert_not_called()
 
-    @patch("vlt.vault_source.hvac.Client")
+    @patch("vltconfig.vault_source.hvac.Client")
     def test_fallback_from_invalid_token_to_approle(
         self, mock_client_class: Mock, vault_env_vars: dict[str, str], clean_env: None
     ) -> None:
@@ -244,7 +244,7 @@ class TestAuthenticateVault:
         }
         mock_client_class.return_value = mock_client
 
-        from vlt.config import VaultAccess
+        from vltconfig.config import VaultAccess
 
         cfg = VaultAccess()
         client = _authenticate_vault(cfg)
@@ -254,7 +254,7 @@ class TestAuthenticateVault:
         mock_client.is_authenticated.assert_called_once()
         mock_client.auth.approle.login.assert_called_once()
 
-    @patch("vlt.vault_source.hvac.Client")
+    @patch("vltconfig.vault_source.hvac.Client")
     def test_fallback_from_invalid_approle_to_userpass(
         self, mock_client_class: Mock, vault_env_vars: dict[str, str], clean_env: None
     ) -> None:
@@ -283,7 +283,7 @@ class TestAuthenticateVault:
         }
         mock_client_class.return_value = mock_client
 
-        from vlt.config import VaultAccess
+        from vltconfig.config import VaultAccess
 
         cfg = VaultAccess()
         client = _authenticate_vault(cfg)
@@ -293,7 +293,7 @@ class TestAuthenticateVault:
         mock_client.auth.approle.login.assert_called_once()
         mock_client.auth.userpass.login.assert_called_once()
 
-    @patch("vlt.vault_source.hvac.Client")
+    @patch("vltconfig.vault_source.hvac.Client")
     def test_all_methods_fail_raises_combined_error(
         self, mock_client_class: Mock, vault_env_vars: dict[str, str], clean_env: None
     ) -> None:
@@ -322,7 +322,7 @@ class TestAuthenticateVault:
         )
         mock_client_class.return_value = mock_client
 
-        from vlt.config import VaultAccess
+        from vltconfig.config import VaultAccess
 
         cfg = VaultAccess()
 
@@ -334,8 +334,8 @@ class TestAuthenticateVault:
 class TestPydanticVaultSource:
     """Tests for PydanticVaultSource class."""
 
-    @patch("vlt.vault_source._authenticate_vault")
-    @patch("vlt.vault_source.VaultAccess")
+    @patch("vltconfig.vault_source._authenticate_vault")
+    @patch("vltconfig.vault_source.VaultAccess")
     def test_successful_secret_retrieval(
         self,
         mock_vault_access: Mock,
@@ -377,8 +377,8 @@ class TestPydanticVaultSource:
             path="test-app/config", mount_point="secret"
         )
 
-    @patch("vlt.vault_source._authenticate_vault")
-    @patch("vlt.vault_source.VaultAccess")
+    @patch("vltconfig.vault_source._authenticate_vault")
+    @patch("vltconfig.vault_source.VaultAccess")
     def test_forbidden_exception_handling(
         self,
         mock_vault_access: Mock,
@@ -412,8 +412,8 @@ class TestPydanticVaultSource:
         # Should return empty dict on error
         assert result == {}
 
-    @patch("vlt.vault_source._authenticate_vault")
-    @patch("vlt.vault_source.VaultAccess")
+    @patch("vltconfig.vault_source._authenticate_vault")
+    @patch("vltconfig.vault_source.VaultAccess")
     def test_invalid_path_exception_handling(
         self,
         mock_vault_access: Mock,
@@ -446,8 +446,8 @@ class TestPydanticVaultSource:
 
         assert result == {}
 
-    @patch("vlt.vault_source._authenticate_vault")
-    @patch("vlt.vault_source.VaultAccess")
+    @patch("vltconfig.vault_source._authenticate_vault")
+    @patch("vltconfig.vault_source.VaultAccess")
     def test_vault_down_exception_handling(
         self,
         mock_vault_access: Mock,
@@ -480,8 +480,8 @@ class TestPydanticVaultSource:
 
         assert result == {}
 
-    @patch("vlt.vault_source._authenticate_vault")
-    @patch("vlt.vault_source.VaultAccess")
+    @patch("vltconfig.vault_source._authenticate_vault")
+    @patch("vltconfig.vault_source.VaultAccess")
     def test_connection_error_handling(
         self,
         mock_vault_access: Mock,
@@ -514,8 +514,8 @@ class TestPydanticVaultSource:
 
         assert result == {}
 
-    @patch("vlt.vault_source._authenticate_vault")
-    @patch("vlt.vault_source.VaultAccess")
+    @patch("vltconfig.vault_source._authenticate_vault")
+    @patch("vltconfig.vault_source.VaultAccess")
     def test_timeout_error_handling(
         self,
         mock_vault_access: Mock,
@@ -548,8 +548,8 @@ class TestPydanticVaultSource:
 
         assert result == {}
 
-    @patch("vlt.vault_source._authenticate_vault")
-    @patch("vlt.vault_source.VaultAccess")
+    @patch("vltconfig.vault_source._authenticate_vault")
+    @patch("vltconfig.vault_source.VaultAccess")
     def test_authentication_failure_handling(
         self,
         mock_vault_access: Mock,
@@ -578,8 +578,8 @@ class TestPydanticVaultSource:
 
         assert result == {}
 
-    @patch("vlt.vault_source._authenticate_vault")
-    @patch("vlt.vault_source.VaultAccess")
+    @patch("vltconfig.vault_source._authenticate_vault")
+    @patch("vltconfig.vault_source.VaultAccess")
     def test_get_field_value_existing(
         self,
         mock_vault_access: Mock,
@@ -620,8 +620,8 @@ class TestPydanticVaultSource:
         assert name == "api_key"
         assert is_set is True
 
-    @patch("vlt.vault_source._authenticate_vault")
-    @patch("vlt.vault_source.VaultAccess")
+    @patch("vltconfig.vault_source._authenticate_vault")
+    @patch("vltconfig.vault_source.VaultAccess")
     def test_get_field_value_missing(
         self,
         mock_vault_access: Mock,
@@ -667,8 +667,8 @@ class TestPydanticVaultSource:
 class TestVaultSourceCaching:
     """Tests for PydanticVaultSource caching functionality."""
 
-    @patch("vlt.vault_source._authenticate_vault")
-    @patch("vlt.vault_source.VaultAccess")
+    @patch("vltconfig.vault_source._authenticate_vault")
+    @patch("vltconfig.vault_source.VaultAccess")
     def test_cache_hit_on_second_call(
         self,
         mock_vault_access: Mock,
@@ -688,7 +688,7 @@ class TestVaultSourceCaching:
         os.environ.update(vault_env_vars)
 
         # Clear cache before test
-        from vlt.vault_source import PydanticVaultSource
+        from vltconfig.vault_source import PydanticVaultSource
 
         PydanticVaultSource._cache.clear()
         PydanticVaultSource._cache_enabled = True
@@ -722,9 +722,9 @@ class TestVaultSourceCaching:
         # Vault should still be called only once (from first call)
         assert mock_client.secrets.kv.v2.read_secret_version.call_count == 1
 
-    @patch("vlt.vault_source._authenticate_vault")
-    @patch("vlt.vault_source.VaultAccess")
-    @patch("vlt.vault_source.datetime")
+    @patch("vltconfig.vault_source._authenticate_vault")
+    @patch("vltconfig.vault_source.VaultAccess")
+    @patch("vltconfig.vault_source.datetime")
     def test_cache_miss_after_ttl_expiration(
         self,
         mock_datetime: Mock,
@@ -748,7 +748,7 @@ class TestVaultSourceCaching:
         # Clear cache before test
         from datetime import datetime, timedelta
 
-        from vlt.vault_source import PydanticVaultSource
+        from vltconfig.vault_source import PydanticVaultSource
 
         PydanticVaultSource._cache.clear()
         PydanticVaultSource._cache_enabled = True
@@ -791,8 +791,8 @@ class TestVaultSourceCaching:
         # Vault should be called twice (cache expired)
         assert mock_client.secrets.kv.v2.read_secret_version.call_count == 2
 
-    @patch("vlt.vault_source._authenticate_vault")
-    @patch("vlt.vault_source.VaultAccess")
+    @patch("vltconfig.vault_source._authenticate_vault")
+    @patch("vltconfig.vault_source.VaultAccess")
     def test_cache_disabled_via_env_var(
         self,
         mock_vault_access: Mock,
@@ -813,7 +813,7 @@ class TestVaultSourceCaching:
         os.environ.update(vault_env_vars)
 
         # Clear cache before test
-        from vlt.vault_source import PydanticVaultSource
+        from vltconfig.vault_source import PydanticVaultSource
 
         PydanticVaultSource._cache.clear()
 
@@ -846,8 +846,8 @@ class TestVaultSourceCaching:
         # Vault should be called twice (cache disabled)
         assert mock_client.secrets.kv.v2.read_secret_version.call_count == 2
 
-    @patch("vlt.vault_source._authenticate_vault")
-    @patch("vlt.vault_source.VaultAccess")
+    @patch("vltconfig.vault_source._authenticate_vault")
+    @patch("vltconfig.vault_source.VaultAccess")
     def test_custom_cache_ttl_via_env_var(
         self,
         mock_vault_access: Mock,
@@ -868,7 +868,7 @@ class TestVaultSourceCaching:
         os.environ.update(vault_env_vars)
 
         # Clear cache before test
-        from vlt.vault_source import PydanticVaultSource
+        from vltconfig.vault_source import PydanticVaultSource
 
         PydanticVaultSource._cache.clear()
         PydanticVaultSource._cache_enabled = True
@@ -889,8 +889,8 @@ class TestVaultSourceCaching:
         # Verify TTL was set from environment
         assert PydanticVaultSource._cache_ttl_seconds == 600
 
-    @patch("vlt.vault_source._authenticate_vault")
-    @patch("vlt.vault_source.VaultAccess")
+    @patch("vltconfig.vault_source._authenticate_vault")
+    @patch("vltconfig.vault_source.VaultAccess")
     def test_different_cache_keys_for_different_configs(
         self,
         mock_vault_access: Mock,
@@ -908,7 +908,7 @@ class TestVaultSourceCaching:
         :param clean_env: Fixture that cleans environment
         """
         # Clear cache before test
-        from vlt.vault_source import PydanticVaultSource
+        from vltconfig.vault_source import PydanticVaultSource
 
         PydanticVaultSource._cache.clear()
         PydanticVaultSource._cache_enabled = True
@@ -967,8 +967,8 @@ class TestVaultSourceCaching:
 class TestVaultSourceRetry:
     """Tests for PydanticVaultSource retry functionality."""
 
-    @patch("vlt.vault_source._authenticate_vault")
-    @patch("vlt.vault_source.VaultAccess")
+    @patch("vltconfig.vault_source._authenticate_vault")
+    @patch("vltconfig.vault_source.VaultAccess")
     def test_successful_retry_after_vault_down(
         self,
         mock_vault_access: Mock,
@@ -987,7 +987,7 @@ class TestVaultSourceRetry:
         """
         os.environ.update(vault_env_vars)
 
-        from vlt.vault_source import PydanticVaultSource
+        from vltconfig.vault_source import PydanticVaultSource
 
         # Clear cache to ensure fresh call
         PydanticVaultSource._cache.clear()
@@ -1017,8 +1017,8 @@ class TestVaultSourceRetry:
         # Should be called twice (1 failure + 1 success)
         assert mock_client.secrets.kv.v2.read_secret_version.call_count == 2
 
-    @patch("vlt.vault_source._authenticate_vault")
-    @patch("vlt.vault_source.VaultAccess")
+    @patch("vltconfig.vault_source._authenticate_vault")
+    @patch("vltconfig.vault_source.VaultAccess")
     def test_all_retries_exhausted_vault_down(
         self,
         mock_vault_access: Mock,
@@ -1035,7 +1035,7 @@ class TestVaultSourceRetry:
         """
         os.environ.update(vault_env_vars)
 
-        from vlt.vault_source import PydanticVaultSource
+        from vltconfig.vault_source import PydanticVaultSource
 
         # Clear cache
         PydanticVaultSource._cache.clear()
@@ -1064,8 +1064,8 @@ class TestVaultSourceRetry:
         # Should be called 3 times (all retry attempts)
         assert mock_client.secrets.kv.v2.read_secret_version.call_count == 3
 
-    @patch("vlt.vault_source._authenticate_vault")
-    @patch("vlt.vault_source.VaultAccess")
+    @patch("vltconfig.vault_source._authenticate_vault")
+    @patch("vltconfig.vault_source.VaultAccess")
     def test_no_retry_on_forbidden_error(
         self,
         mock_vault_access: Mock,
@@ -1082,7 +1082,7 @@ class TestVaultSourceRetry:
         """
         os.environ.update(vault_env_vars)
 
-        from vlt.vault_source import PydanticVaultSource
+        from vltconfig.vault_source import PydanticVaultSource
 
         # Clear cache
         PydanticVaultSource._cache.clear()
@@ -1111,8 +1111,8 @@ class TestVaultSourceRetry:
         # Should be called only once (no retries for Forbidden)
         assert mock_client.secrets.kv.v2.read_secret_version.call_count == 1
 
-    @patch("vlt.vault_source._authenticate_vault")
-    @patch("vlt.vault_source.VaultAccess")
+    @patch("vltconfig.vault_source._authenticate_vault")
+    @patch("vltconfig.vault_source.VaultAccess")
     def test_successful_retry_after_connection_error(
         self,
         mock_vault_access: Mock,
@@ -1131,7 +1131,7 @@ class TestVaultSourceRetry:
         """
         os.environ.update(vault_env_vars)
 
-        from vlt.vault_source import PydanticVaultSource
+        from vltconfig.vault_source import PydanticVaultSource
 
         # Clear cache
         PydanticVaultSource._cache.clear()

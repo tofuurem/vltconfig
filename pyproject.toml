@@ -3,11 +3,11 @@ requires = ["setuptools>=42", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "vault-pydantic-simple"
-version = "0.5.0"
-description = "Library to fetch configuration from Vault KV and JSON using pydantic"
+name = "vltconfig"
+version = "1.0.1"
+description = "Pydantic settings from HashiCorp Vault KV and JSON with caching and retry"
 readme = "README.md"
-license = "MIT"
+license = {text = "MIT"}
 requires-python = ">=3.11"
 
 classifiers = [
@@ -30,8 +30,13 @@ dependencies = [
 name = "tofuurem"
 email = "rabbit_1399@icloud.com"
 
+[project.urls]
+Homepage = "https://github.com/tofuurem/vltconfig"
+Repository = "https://github.com/tofuurem/vltconfig"
+Issues = "https://github.com/tofuurem/vltconfig/issues"
+
 [tool.setuptools]
-packages = ["vlt"]
+packages = ["vltconfig"]
 
 [dependency-groups]
 dev = [

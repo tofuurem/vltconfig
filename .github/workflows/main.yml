@@ -8,13 +8,13 @@ jobs:
     runs-on: ubuntu-latest
     environment:
       name: pypi
-      url: https://pypi.org/p/vault-pydantic-simple
+      url: https://pypi.org/p/vltconfig
     permissions:
       id-token: write
     steps:
       - name: Install packaging dependencies
         run: pip install build
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - name: Build package
         run: python -m build
       - name: Publish package distributions to PyPI

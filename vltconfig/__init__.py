@@ -6,8 +6,8 @@ from pydantic_settings import (
     PydanticBaseSettingsSource,
 )
 
-from vlt.json_source import PydanticJSONSource
-from vlt.vault_source import PydanticVaultSource
+from vltconfig.json_source import PydanticJSONSource
+from vltconfig.vault_source import PydanticVaultSource
 
 
 class VaultJsonConfig(BaseSettings):

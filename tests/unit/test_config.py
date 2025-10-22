@@ -5,7 +5,7 @@ import os
 import pytest
 from pydantic import ValidationError
 
-from vlt.config import VaultAccess
+from vltconfig.config import VaultAccess
 
 
 @pytest.mark.unit

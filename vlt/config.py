@@ -12,6 +12,7 @@ class VaultAccess(BaseSettings):
     Supports multiple authentication methods:
     - Token-based authentication (VAULT_TOKEN)
     - Username/Password authentication (VAULT_USERNAME + VAULT_PASSWORD)
+    - AppRole authentication (VAULT_ROLE_ID + VAULT_SECRET_ID)
 
     All configuration is loaded from environment variables.
 
@@ -27,6 +28,14 @@ class VaultAccess(BaseSettings):
         os.environ["VAULT_ADDRESS"] = "https://vault.example.com"
         os.environ["VAULT_USERNAME"] = "readonly"
         os.environ["VAULT_PASSWORD"] = "secret-password"
+        os.environ["VAULT_APP_NAME"] = "myapp/config"
+
+        config = VaultAccess()
+
+        # AppRole authentication
+        os.environ["VAULT_ADDRESS"] = "https://vault.example.com"
+        os.environ["VAULT_ROLE_ID"] = "your-role-id"
+        os.environ["VAULT_SECRET_ID"] = "your-secret-id"
         os.environ["VAULT_APP_NAME"] = "myapp/config"
 
         config = VaultAccess()
@@ -48,6 +57,16 @@ class VaultAccess(BaseSettings):
         default=None,
         alias="VAULT_PASSWORD",
         description="Password for userpass authentication",
+    )
+    role_id: str | None = Field(
+        default=None,
+        alias="VAULT_ROLE_ID",
+        description="Role ID for AppRole authentication",
+    )
+    secret_id: str | None = Field(
+        default=None,
+        alias="VAULT_SECRET_ID",
+        description="Secret ID for AppRole authentication",
     )
     app_name: str = Field(
         alias="VAULT_APP_NAME",
@@ -78,11 +97,22 @@ class VaultAccess(BaseSettings):
     def validate_creds(self) -> Self:
         """Validate that at least one authentication method is provided.
 
+        Accepts one of three authentication methods:
+        1. Token (VAULT_TOKEN)
+        2. Username/Password (VAULT_USERNAME + VAULT_PASSWORD)
+        3. AppRole (VAULT_ROLE_ID + VAULT_SECRET_ID)
+
         :return: Validated VaultAccess instance
         :raises ValueError: If no valid authentication credentials provided
         """
-        if self.token is None and (self.username is None or self.password is None):
+        has_token = self.token is not None
+        has_userpass = self.username is not None and self.password is not None
+        has_approle = self.role_id is not None and self.secret_id is not None
+
+        if not (has_token or has_userpass or has_approle):
             raise ValueError(
-                "Must provide either VAULT_TOKEN or VAULT_USERNAME + VAULT_PASSWORD"
+                "Must provide one of: VAULT_TOKEN, "
+                "VAULT_USERNAME + VAULT_PASSWORD, or "
+                "VAULT_ROLE_ID + VAULT_SECRET_ID"
             )
         return self

@@ -32,29 +32,75 @@ def _log_retry_attempt(retry_state: RetryCallState) -> None:
     )
 
 
-def _auth_by_userpass(cfg: VaultAccess) -> hvac.Client:
-    """Authenticate to Vault using token or username/password.
+def _authenticate_vault(cfg: VaultAccess) -> hvac.Client:
+    """Authenticate to Vault using configured method with fallback support.
+
+    Tries authentication methods in priority order, falling back to next method if current fails:
+    1. Token authentication (VAULT_TOKEN)
+    2. AppRole authentication (VAULT_ROLE_ID + VAULT_SECRET_ID)
+    3. Username/Password authentication (VAULT_USERNAME + VAULT_PASSWORD)
+
+    If multiple methods are configured and one fails, the next available method is tried.
+    This provides resilience if one authentication method is temporarily unavailable.
 
     :param cfg: Vault configuration with credentials
     :return: Authenticated hvac Client instance
-    :raises ValueError: If authentication fails
+    :raises ValueError: If all configured authentication methods fail
     """
     logger.trace("Starting Vault authentication to {}", cfg.address)
+    client = hvac.Client(url=str(cfg.address))
+    errors: list[str] = []
 
+    # Try token authentication
     if cfg.token:
-        logger.trace("Using token authentication")
-        client = hvac.Client(url=str(cfg.address), token=cfg.token)
-        if not client.is_authenticated():
-            raise ValueError("Failed to authenticate with Vault token")
-        logger.trace("Successfully authenticated with token")
-        return client
+        logger.trace("Trying token authentication")
+        try:
+            client.token = cfg.token
+            if not client.is_authenticated():
+                raise ValueError("Token is invalid or expired")
+            logger.trace("Successfully authenticated with token")
+            return client
+        except (ValueError, hvac.exceptions.Forbidden, hvac.exceptions.Unauthorized) as ex:
+            error_msg = f"Token auth failed: {ex}"
+            errors.append(error_msg)
+            logger.trace("Token authentication failed, trying next method: {}", ex)
+
+    # Try AppRole authentication
+    if cfg.role_id and cfg.secret_id:
+        logger.trace("Trying AppRole authentication")
+        try:
+            resp = client.auth.approle.login(
+                role_id=cfg.role_id, secret_id=cfg.secret_id
+            )
+            client.token = resp["auth"]["client_token"]
+            logger.trace("Successfully authenticated with AppRole")
+            return client
+        except (hvac.exceptions.InvalidRequest, hvac.exceptions.Forbidden) as ex:
+            error_msg = f"AppRole auth failed: {ex}"
+            errors.append(error_msg)
+            logger.trace("AppRole authentication failed, trying next method: {}", ex)
+
+    # Try userpass authentication
+    if cfg.username and cfg.password:
+        logger.trace("Trying userpass authentication")
+        try:
+            resp = client.auth.userpass.login(
+                username=cfg.username, password=cfg.password
+            )
+            client.token = resp["auth"]["client_token"]
+            logger.trace("Successfully authenticated with userpass")
+            return client
+        except (hvac.exceptions.InvalidRequest, hvac.exceptions.Forbidden) as ex:
+            error_msg = f"Userpass auth failed: {ex}"
+            errors.append(error_msg)
+            logger.trace("Userpass authentication failed: {}", ex)
+
+    # All methods failed
+    if errors:
+        combined_errors = "; ".join(errors)
+        raise ValueError(f"All authentication methods failed: {combined_errors}")
     else:
-        logger.trace("Using userpass authentication")
-        client = hvac.Client(url=str(cfg.address))
-        resp = client.auth.userpass.login(username=cfg.username, password=cfg.password)
-        client.token = resp["auth"]["client_token"]
-        logger.trace("Successfully authenticated with userpass")
-        return client
+        raise ValueError("No authentication method configured")
 
 
 class PydanticVaultSource(PydanticBaseSettingsSource):
@@ -129,7 +175,7 @@ class PydanticVaultSource(PydanticBaseSettingsSource):
         :raises hvac.exceptions.VaultError: If all retries exhausted or non-retryable error
         """
         cfg = VaultAccess()  # type: ignore[call-arg]
-        client = _auth_by_userpass(cfg)
+        client = _authenticate_vault(cfg)
 
         logger.trace(
             "Requesting secrets from Vault: path={}, mount={}",

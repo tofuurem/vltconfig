@@ -161,3 +161,6 @@ cython_debug/
 .idea/
 .DS_Store
 dev/
+
+# Local review, design, and audit artifacts
+docs/

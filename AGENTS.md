@@ -16,7 +16,7 @@ These instructions apply to the entire repository. A more specific `AGENTS.md` i
 - `tests/unit/`: isolated behavior and regression tests.
 - `tests/integration/`: opt-in tests that may use real infrastructure; keep the default suite offline.
 - `examples/`: runnable, secret-free usage examples.
-- `pyproject.toml`, `uv.lock`, and `pytest.ini`: packaging, dependencies, and quality configuration.
+- `pyproject.toml` and `uv.lock`: packaging, dependencies, tests, coverage, and quality configuration.
 - `.github/workflows/`: pull-request validation and release automation.
 
 Do not migrate layouts, rename the package, or change the public import path unless the task explicitly calls for a breaking change.

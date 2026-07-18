@@ -1,0 +1,152 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_call:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  UV_VERSION: "0.11.29"
+
+jobs:
+  quality:
+    name: Quality
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+      - name: Set up Python
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: "3.11"
+      - name: Set up uv
+        uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990 # v8.3.2
+        with:
+          version: ${{ env.UV_VERSION }}
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+      - name: Install locked dependencies
+        run: uv sync --frozen --python 3.11 --group dev
+      - name: Lint
+        run: uv run --frozen ruff check .
+      - name: Check formatting
+        run: uv run --frozen ruff format --check .
+      - name: Check types with MyPy
+        run: uv run --frozen mypy vltconfig tests
+      - name: Check types with ty
+        run: uv run --frozen ty check
+      - name: Validate workflows
+        run: uv run --frozen actionlint
+      - name: Audit workflow security
+        run: >-
+          uv run --frozen zizmor --offline --pedantic --format github
+          .github/workflows
+      - name: Scan tracked files for secrets
+        run: uv run --frozen pre-commit run gitleaks --all-files
+
+  tests:
+    name: Python ${{ matrix.python-version }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      PYTHON_VERSION: ${{ matrix.python-version }}
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12", "3.13", "3.14"]
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+      - name: Set up Python
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Set up uv
+        uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990 # v8.3.2
+        with:
+          version: ${{ env.UV_VERSION }}
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+      - name: Install locked dependencies
+        run: uv sync --frozen --python "$PYTHON_VERSION" --group dev
+      - name: Run tests
+        run: uv run --frozen --python "$PYTHON_VERSION" pytest -q
+
+  python-preview:
+    name: Python 3.15 preview
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    continue-on-error: true
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+      - name: Set up preview Python
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: "3.15"
+          allow-prereleases: true
+          check-latest: true
+      - name: Set up uv
+        uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990 # v8.3.2
+        with:
+          version: ${{ env.UV_VERSION }}
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+      - name: Install locked dependencies
+        run: uv sync --frozen --python 3.15 --group dev
+      - name: Run tests
+        run: uv run --frozen --python 3.15 pytest -q
+
+  build:
+    name: Build distributions
+    needs: [quality, tests]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+      - name: Set up Python
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: "3.11"
+      - name: Set up uv
+        uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990 # v8.3.2
+        with:
+          version: ${{ env.UV_VERSION }}
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+      - name: Install locked dependencies
+        run: uv sync --frozen --python 3.11 --group dev
+      - name: Build source and wheel distributions
+        run: uv build
+      - name: Check distribution metadata
+        run: uv run --frozen twine check dist/*
+      - name: Test package metadata
+        run: uv run --frozen pytest tests/packaging/test_metadata.py -q --no-cov
+      - name: Smoke-test installed wheel
+        run: ./scripts/smoke-wheel.sh
+      - name: Upload distributions
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: distributions
+          path: dist/
+          if-no-files-found: error
+          retention-days: 7

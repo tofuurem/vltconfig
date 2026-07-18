@@ -44,6 +44,18 @@ repos:
         language: system
         pass_filenames: false
         stages: [pre-commit]
+      - id: actionlint
+        name: GitHub Actions syntax
+        entry: uv run --frozen actionlint
+        language: system
+        files: ^\.github/workflows/.*\.ya?ml$
+        stages: [pre-commit]
+      - id: zizmor
+        name: GitHub Actions security
+        entry: uv run --frozen zizmor --offline --pedantic .github/workflows
+        language: system
+        pass_filenames: false
+        stages: [pre-commit]
       - id: pytest
         name: pytest
         entry: uv run --frozen pytest -q

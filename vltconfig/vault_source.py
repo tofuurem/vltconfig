@@ -2,8 +2,11 @@ import os
 from datetime import datetime, timedelta
 from typing import Any, ClassVar
 
+import hvac
+import hvac.exceptions
 from loguru import logger
 from pydantic.fields import FieldInfo
+from pydantic_settings import BaseSettings, PydanticBaseSettingsSource
 from tenacity import (
     RetryCallState,
     retry,
@@ -11,10 +14,6 @@ from tenacity import (
     stop_after_attempt,
     wait_exponential,
 )
-
-from pydantic_settings import BaseSettings, PydanticBaseSettingsSource
-
-import hvac
 
 from vltconfig.config import VaultAccess
 
@@ -182,7 +181,7 @@ class PydanticVaultSource(PydanticBaseSettingsSource):
 
         :raises hvac.exceptions.VaultError: If all retries exhausted or non-retryable error
         """
-        cfg = VaultAccess()  # type: ignore[call-arg]
+        cfg = VaultAccess()
         client = _authenticate_vault(cfg)
 
         logger.trace(
@@ -213,7 +212,7 @@ class PydanticVaultSource(PydanticBaseSettingsSource):
         """
         # Try to create VaultAccess configuration
         try:
-            cfg = VaultAccess()  # type: ignore[call-arg]
+            cfg = VaultAccess()
         except Exception as ex:
             # Vault configuration not available (missing env vars or validation error)
             logger.trace(

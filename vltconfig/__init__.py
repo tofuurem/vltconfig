@@ -1,9 +1,7 @@
-from typing import Type
-
 from pydantic_settings import (
     BaseSettings,
-    SettingsConfigDict,
     PydanticBaseSettingsSource,
+    SettingsConfigDict,
 )
 
 from vltconfig.json_source import PydanticJSONSource
@@ -35,7 +33,7 @@ class VaultJsonConfig(BaseSettings):
     @classmethod
     def settings_customise_sources(
         cls,
-        settings_cls: Type[BaseSettings],
+        settings_cls: type[BaseSettings],
         init_settings: PydanticBaseSettingsSource,
         env_settings: PydanticBaseSettingsSource,
         dotenv_settings: PydanticBaseSettingsSource,

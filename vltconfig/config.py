@@ -2,7 +2,6 @@ from typing import Self
 
 from hvac.api.secrets_engines.kv_v2 import DEFAULT_MOUNT_POINT
 from pydantic import Field, HttpUrl, field_validator, model_validator
-
 from pydantic_settings import BaseSettings
 
 

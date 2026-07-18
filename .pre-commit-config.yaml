@@ -1,0 +1,58 @@
+minimum_pre_commit_version: "4.6.0"
+default_install_hook_types: [pre-commit, pre-push]
+
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: check-added-large-files
+      - id: check-case-conflict
+      - id: check-merge-conflict
+      - id: check-toml
+      - id: check-yaml
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
+
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.30.1
+    hooks:
+      - id: gitleaks
+
+  - repo: local
+    hooks:
+      - id: ruff-check
+        name: Ruff lint
+        entry: uv run --frozen ruff check .
+        language: system
+        pass_filenames: false
+        stages: [pre-commit]
+      - id: ruff-format
+        name: Ruff format
+        entry: uv run --frozen ruff format --check .
+        language: system
+        pass_filenames: false
+        stages: [pre-commit]
+      - id: mypy
+        name: MyPy
+        entry: uv run --frozen mypy vltconfig tests
+        language: system
+        pass_filenames: false
+        stages: [pre-commit]
+      - id: ty
+        name: ty
+        entry: uv run --frozen ty check
+        language: system
+        pass_filenames: false
+        stages: [pre-commit]
+      - id: pytest
+        name: pytest
+        entry: uv run --frozen pytest -q
+        language: system
+        pass_filenames: false
+        stages: [pre-push]
+      - id: package-build
+        name: package build
+        entry: uv build
+        language: system
+        pass_filenames: false
+        stages: [pre-push]

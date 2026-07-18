@@ -3,9 +3,8 @@ import os
 from pathlib import Path
 
 from loguru import logger
-from pydantic_settings import PydanticBaseSettingsSource, BaseSettings
-
 from pydantic.fields import FieldInfo
+from pydantic_settings import BaseSettings, PydanticBaseSettingsSource
 
 from vltconfig.constants import PYDANTIC_JSON_PATH
 

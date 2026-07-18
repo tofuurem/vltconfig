@@ -6,6 +6,7 @@ import tempfile
 from pathlib import Path
 
 import pytest
+from pydantic import ValidationError
 
 from vltconfig import VaultJsonConfig
 
@@ -118,5 +119,5 @@ class TestJSONOnlyConfiguration:
                 api_key: str
 
             # Should raise ValidationError for missing required field
-            with pytest.raises(Exception):  # ValidationError from pydantic
+            with pytest.raises(ValidationError):
                 TestConfig()

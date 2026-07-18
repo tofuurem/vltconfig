@@ -1,12 +1,20 @@
 import json
 import os
 from pathlib import Path
+from typing import Any
 
 from loguru import logger
 from pydantic.fields import FieldInfo
 from pydantic_settings import BaseSettings, PydanticBaseSettingsSource
 
 from vltconfig.constants import PYDANTIC_JSON_PATH
+from vltconfig.errors import (
+    JSONDecodeError,
+    JSONFileNotFoundError,
+    JSONPermissionError,
+    JSONSourceError,
+    JSONStructureError,
+)
 
 
 class PydanticJSONSource(PydanticBaseSettingsSource):
@@ -22,11 +30,11 @@ class PydanticJSONSource(PydanticBaseSettingsSource):
         :param settings_cls: Pydantic settings class
         """
         super().__init__(settings_cls)
-        self._result_config: dict[str, str | int | float | bool] = {}
+        self._result_config: dict[str, Any] = {}
 
     def get_field_value(
         self, field: FieldInfo, field_name: str
-    ) -> tuple[str | int | float | bool | None, str, bool]:
+    ) -> tuple[Any, str, bool]:
         """Get field value from loaded JSON configuration.
 
         :param field: Pydantic field information
@@ -38,31 +46,52 @@ class PydanticJSONSource(PydanticBaseSettingsSource):
             return (None, field_name, False)
         return (value, field_name, True)
 
-    def _get_config_from_json(self) -> None:
-        """Load configuration from JSON file.
+    @staticmethod
+    def _config_path() -> tuple[Path, bool]:
+        """Resolve the historical directory-based JSON path contract."""
+        path_env = os.getenv(PYDANTIC_JSON_PATH)
+        return (
+            Path(path_env or os.path.dirname(__file__), "config.json"),
+            bool(path_env),
+        )
 
-        Reads config.json from PYDANTIC_JSON_PATH or package directory.
-
-        :raises FileNotFoundError: If config.json not found
-        :raises json.JSONDecodeError: If JSON is invalid
-        """
-        path_env = os.getenv(PYDANTIC_JSON_PATH, default=None)
-        config_path = Path(path_env or os.path.dirname(__file__), "config.json")
-
-        with config_path.open("r", encoding="utf-8") as f:
-            self._result_config = json.load(f)
-
-    def __call__(self) -> dict[str, str | int | float | bool]:
+    def __call__(self) -> dict[str, Any]:
         """Load configuration from JSON file.
 
         :return: Dictionary of configuration key-value pairs
         """
+        config_path, explicitly_configured = self._config_path()
         try:
-            self._get_config_from_json()
-        except FileNotFoundError:
-            logger.trace("config.json not found, skipping JSON source")
-        except json.JSONDecodeError as ex:
-            logger.error("Invalid JSON in config.json: {}", ex)
-        except Exception as ex:
-            logger.error("Error loading JSON config: {}", ex)
+            with config_path.open("r", encoding="utf-8") as config_file:
+                document: Any = json.load(config_file)
+        except FileNotFoundError as cause:
+            if not explicitly_configured:
+                logger.trace("Default config.json is absent; skipping JSON source")
+                return {}
+            raise JSONFileNotFoundError(
+                f"JSON configuration file was not found at {config_path}",
+                cause_type=type(cause).__name__,
+            ) from None
+        except PermissionError as cause:
+            raise JSONPermissionError(
+                f"JSON configuration file is not readable at {config_path}",
+                cause_type=type(cause).__name__,
+            ) from None
+        except (json.JSONDecodeError, UnicodeError) as cause:
+            raise JSONDecodeError(
+                f"JSON configuration file is malformed at {config_path}",
+                cause_type=type(cause).__name__,
+            ) from None
+        except OSError as cause:
+            raise JSONSourceError(
+                f"JSON configuration file could not be read at {config_path}",
+                cause_type=type(cause).__name__,
+            ) from None
+
+        if not isinstance(document, dict):
+            raise JSONStructureError(
+                f"JSON configuration must contain an object at {config_path}"
+            )
+
+        self._result_config = document
         return self._result_config

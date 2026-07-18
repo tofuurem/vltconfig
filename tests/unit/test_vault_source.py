@@ -7,6 +7,12 @@ from unittest.mock import Mock, patch
 import hvac.exceptions
 import pytest
 
+from vltconfig.errors import (
+    VaultAuthenticationError,
+    VaultAuthorizationError,
+    VaultPathNotFoundError,
+    VaultUnavailableError,
+)
 from vltconfig.vault_source import PydanticVaultSource, _authenticate_vault
 
 
@@ -407,10 +413,8 @@ class TestPydanticVaultSource:
         from pydantic_settings import BaseSettings
 
         source = PydanticVaultSource(settings_cls=BaseSettings)
-        result = source()
-
-        # Should return empty dict on error
-        assert result == {}
+        with pytest.raises(VaultAuthorizationError):
+            source()
 
     @patch("vltconfig.vault_source._authenticate_vault")
     @patch("vltconfig.vault_source.VaultAccess")
@@ -442,9 +446,8 @@ class TestPydanticVaultSource:
         from pydantic_settings import BaseSettings
 
         source = PydanticVaultSource(settings_cls=BaseSettings)
-        result = source()
-
-        assert result == {}
+        with pytest.raises(VaultPathNotFoundError):
+            source()
 
     @patch("vltconfig.vault_source._authenticate_vault")
     @patch("vltconfig.vault_source.VaultAccess")
@@ -476,9 +479,8 @@ class TestPydanticVaultSource:
         from pydantic_settings import BaseSettings
 
         source = PydanticVaultSource(settings_cls=BaseSettings)
-        result = source()
-
-        assert result == {}
+        with pytest.raises(VaultUnavailableError):
+            source()
 
     @patch("vltconfig.vault_source._authenticate_vault")
     @patch("vltconfig.vault_source.VaultAccess")
@@ -510,9 +512,8 @@ class TestPydanticVaultSource:
         from pydantic_settings import BaseSettings
 
         source = PydanticVaultSource(settings_cls=BaseSettings)
-        result = source()
-
-        assert result == {}
+        with pytest.raises(VaultUnavailableError):
+            source()
 
     @patch("vltconfig.vault_source._authenticate_vault")
     @patch("vltconfig.vault_source.VaultAccess")
@@ -544,9 +545,8 @@ class TestPydanticVaultSource:
         from pydantic_settings import BaseSettings
 
         source = PydanticVaultSource(settings_cls=BaseSettings)
-        result = source()
-
-        assert result == {}
+        with pytest.raises(VaultUnavailableError):
+            source()
 
     @patch("vltconfig.vault_source._authenticate_vault")
     @patch("vltconfig.vault_source.VaultAccess")
@@ -574,9 +574,8 @@ class TestPydanticVaultSource:
         from pydantic_settings import BaseSettings
 
         source = PydanticVaultSource(settings_cls=BaseSettings)
-        result = source()
-
-        assert result == {}
+        with pytest.raises(VaultAuthenticationError):
+            source()
 
     @patch("vltconfig.vault_source._authenticate_vault")
     @patch("vltconfig.vault_source.VaultAccess")
@@ -1057,10 +1056,9 @@ class TestVaultSourceRetry:
         from pydantic_settings import BaseSettings
 
         source = PydanticVaultSource(settings_cls=BaseSettings)
-        result = source()
+        with pytest.raises(VaultUnavailableError):
+            source()
 
-        # Should return empty dict after all retries fail
-        assert result == {}
         # Should be called 3 times (all retry attempts)
         assert mock_client.secrets.kv.v2.read_secret_version.call_count == 3
 
@@ -1104,10 +1102,9 @@ class TestVaultSourceRetry:
         from pydantic_settings import BaseSettings
 
         source = PydanticVaultSource(settings_cls=BaseSettings)
-        result = source()
+        with pytest.raises(VaultAuthorizationError):
+            source()
 
-        # Should return empty dict immediately (no retry)
-        assert result == {}
         # Should be called only once (no retries for Forbidden)
         assert mock_client.secrets.kv.v2.read_secret_version.call_count == 1
 

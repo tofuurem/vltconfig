@@ -55,6 +55,8 @@ def clean_env() -> Generator[None, None, None]:
         "VAULT_TOKEN",
         "VAULT_USERNAME",
         "VAULT_PASSWORD",
+        "VAULT_ROLE_ID",
+        "VAULT_SECRET_ID",
         "VAULT_APP_NAME",
         "VAULT_MOUNT_POINT",
         "PYDANTIC_JSON_PATH",

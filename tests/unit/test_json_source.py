@@ -6,6 +6,12 @@ from pathlib import Path
 
 import pytest
 
+from vltconfig.errors import (
+    JSONDecodeError,
+    JSONFileNotFoundError,
+    JSONPermissionError,
+    JSONStructureError,
+)
 from vltconfig.json_source import PydanticJSONSource
 
 
@@ -32,10 +38,10 @@ class TestPydanticJSONSource:
         assert result["api_key"] == "json-api-key"
         assert result["debug"] is False
 
-    def test_missing_file_trace_not_error(
+    def test_explicit_missing_file_is_an_error(
         self, tmp_path: Path, clean_env: None
     ) -> None:
-        """Test that missing config.json uses trace logging, not error.
+        """Test that an explicitly configured missing file is visible.
 
         :param tmp_path: Pytest temporary directory
         :param clean_env: Fixture that cleans environment
@@ -46,10 +52,8 @@ class TestPydanticJSONSource:
         from pydantic_settings import BaseSettings
 
         source = PydanticJSONSource(settings_cls=BaseSettings)
-        result = source()
-
-        # Should return empty dict, not raise exception
-        assert result == {}
+        with pytest.raises(JSONFileNotFoundError):
+            source()
 
     def test_invalid_json_error(self, tmp_path: Path, clean_env: None) -> None:
         """Test that invalid JSON logs error.
@@ -66,10 +70,8 @@ class TestPydanticJSONSource:
         from pydantic_settings import BaseSettings
 
         source = PydanticJSONSource(settings_cls=BaseSettings)
-        result = source()
-
-        # Should return empty dict after logging error
-        assert result == {}
+        with pytest.raises(JSONDecodeError):
+            source()
 
     def test_default_path_package_directory(self, clean_env: None) -> None:
         """Test default path uses package directory.
@@ -196,7 +198,9 @@ class TestPydanticJSONSource:
 
         assert result == {}
 
-    def test_permission_error_handling(self, tmp_path: Path, clean_env: None) -> None:
+    def test_permission_error_handling(
+        self, tmp_path: Path, clean_env: None, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         """Test handling of permission errors.
 
         :param tmp_path: Pytest temporary directory
@@ -205,21 +209,31 @@ class TestPydanticJSONSource:
         config_file = tmp_path / "config.json"
         config_file.write_text('{"test": "value"}')
 
-        # Make file unreadable (Unix-like systems only)
-        import sys
+        os.environ["PYDANTIC_JSON_PATH"] = str(tmp_path)
 
-        if sys.platform != "win32":
-            config_file.chmod(0o000)
+        from pydantic_settings import BaseSettings
 
-            os.environ["PYDANTIC_JSON_PATH"] = str(tmp_path)
+        source = PydanticJSONSource(settings_cls=BaseSettings)
+        monkeypatch.setattr(
+            Path,
+            "open",
+            lambda *_args, **_kwargs: (_ for _ in ()).throw(
+                PermissionError("unsafe operating-system detail")
+            ),
+        )
 
-            from pydantic_settings import BaseSettings
+        with pytest.raises(JSONPermissionError):
+            source()
 
-            source = PydanticJSONSource(settings_cls=BaseSettings)
-            result = source()
+    def test_non_object_document_is_an_error(
+        self, tmp_path: Path, clean_env: None
+    ) -> None:
+        """A settings document must have a JSON object at its root."""
+        (tmp_path / "config.json").write_text('["not", "an", "object"]')
+        os.environ["PYDANTIC_JSON_PATH"] = str(tmp_path)
 
-            # Should return empty dict after logging error
-            assert result == {}
+        from pydantic_settings import BaseSettings
 
-            # Restore permissions for cleanup
-            config_file.chmod(0o644)
+        source = PydanticJSONSource(settings_cls=BaseSettings)
+        with pytest.raises(JSONStructureError):
+            source()

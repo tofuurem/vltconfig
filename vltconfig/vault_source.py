@@ -5,6 +5,7 @@ from typing import Any, ClassVar
 import hvac
 import hvac.exceptions
 from loguru import logger
+from pydantic import ValidationError
 from pydantic.fields import FieldInfo
 from pydantic_settings import BaseSettings, PydanticBaseSettingsSource
 from tenacity import (
@@ -15,7 +16,17 @@ from tenacity import (
     wait_exponential,
 )
 
-from vltconfig.config import VaultAccess
+from vltconfig.config import VaultAccess, vault_environment_present
+from vltconfig.errors import (
+    VaultAuthenticationError,
+    VaultAuthorizationError,
+    VaultConfigurationError,
+    VaultPathNotFoundError,
+    VaultResponseError,
+    VaultSourceError,
+    VaultUnavailableError,
+)
+from vltconfig.policy import VaultFailurePolicy
 
 
 def _log_retry_attempt(retry_state: RetryCallState) -> None:
@@ -24,8 +35,7 @@ def _log_retry_attempt(retry_state: RetryCallState) -> None:
     :param retry_state: Current retry state information
     """
     logger.warning(
-        "Retrying after error: {} (attempt {}/{})",
-        retry_state.outcome.exception() if retry_state.outcome else "unknown",
+        "Retrying transient Vault request (attempt {}/{})",
         retry_state.attempt_number,
         3,  # max attempts
     )
@@ -48,13 +58,13 @@ def _authenticate_vault(cfg: VaultAccess) -> hvac.Client:
     """
     logger.trace("Starting Vault authentication to {}", cfg.address)
     client = hvac.Client(url=str(cfg.address))
-    errors: list[str] = []
+    failed_methods: list[str] = []
 
     # Try token authentication
     if cfg.token:
         logger.trace("Trying token authentication")
         try:
-            client.token = cfg.token
+            client.token = cfg.token.get_secret_value()
             if not client.is_authenticated():
                 raise ValueError("Token is invalid or expired")
             logger.trace("Successfully authenticated with token")
@@ -63,47 +73,45 @@ def _authenticate_vault(cfg: VaultAccess) -> hvac.Client:
             ValueError,
             hvac.exceptions.Forbidden,
             hvac.exceptions.Unauthorized,
-        ) as ex:
-            error_msg = f"Token auth failed: {ex}"
-            errors.append(error_msg)
-            logger.trace("Token authentication failed, trying next method: {}", ex)
+        ):
+            failed_methods.append("token")
+            logger.trace("Token authentication failed; trying next configured method")
 
     # Try AppRole authentication
     if cfg.role_id and cfg.secret_id:
         logger.trace("Trying AppRole authentication")
         try:
             resp = client.auth.approle.login(
-                role_id=cfg.role_id, secret_id=cfg.secret_id
+                role_id=cfg.role_id.get_secret_value(),
+                secret_id=cfg.secret_id.get_secret_value(),
             )
             client.token = resp["auth"]["client_token"]
             logger.trace("Successfully authenticated with AppRole")
             return client
-        except (hvac.exceptions.InvalidRequest, hvac.exceptions.Forbidden) as ex:
-            error_msg = f"AppRole auth failed: {ex}"
-            errors.append(error_msg)
-            logger.trace("AppRole authentication failed, trying next method: {}", ex)
+        except (hvac.exceptions.InvalidRequest, hvac.exceptions.Forbidden):
+            failed_methods.append("AppRole")
+            logger.trace("AppRole authentication failed; trying next configured method")
 
     # Try userpass authentication
     if cfg.username and cfg.password:
         logger.trace("Trying userpass authentication")
         try:
             resp = client.auth.userpass.login(
-                username=cfg.username, password=cfg.password
+                username=cfg.username,
+                password=cfg.password.get_secret_value(),
             )
             client.token = resp["auth"]["client_token"]
             logger.trace("Successfully authenticated with userpass")
             return client
-        except (hvac.exceptions.InvalidRequest, hvac.exceptions.Forbidden) as ex:
-            error_msg = f"Userpass auth failed: {ex}"
-            errors.append(error_msg)
-            logger.trace("Userpass authentication failed: {}", ex)
+        except (hvac.exceptions.InvalidRequest, hvac.exceptions.Forbidden):
+            failed_methods.append("userpass")
+            logger.trace("Userpass authentication failed")
 
     # All methods failed
-    if errors:
-        combined_errors = "; ".join(errors)
-        raise ValueError(f"All authentication methods failed: {combined_errors}")
-    else:
-        raise ValueError("No authentication method configured")
+    if failed_methods:
+        methods = ", ".join(failed_methods)
+        raise ValueError(f"All authentication methods failed ({methods})")
+    raise ValueError("No authentication method configured")
 
 
 class PydanticVaultSource(PydanticBaseSettingsSource):
@@ -117,13 +125,19 @@ class PydanticVaultSource(PydanticBaseSettingsSource):
     _cache_ttl_seconds: ClassVar[int] = 300  # 5 minutes default
     _cache_enabled: ClassVar[bool] = True
 
-    def __init__(self, settings_cls: type[BaseSettings]) -> None:
+    def __init__(
+        self,
+        settings_cls: type[BaseSettings],
+        *,
+        failure_policy: VaultFailurePolicy = VaultFailurePolicy.STRICT,
+    ) -> None:
         """Initialize Vault settings source.
 
         :param settings_cls: Pydantic settings class
         """
         super().__init__(settings_cls)
         self._result_config: dict[str, str | int | float | bool] = {}
+        self._failure_policy = failure_policy
 
         # Allow disabling cache via environment variable
         cache_disabled = os.getenv("VAULT_CACHE_DISABLED", "").lower() in (
@@ -199,6 +213,23 @@ class PydanticVaultSource(PydanticBaseSettingsSource):
             "Successfully loaded {} secrets from Vault", len(self._result_config)
         )
 
+    def _handle_failure(
+        self, error: VaultSourceError
+    ) -> dict[str, str | int | float | bool]:
+        """Apply the configured strict or explicit fallback failure policy."""
+        if self._failure_policy is VaultFailurePolicy.FALLBACK:
+            logger.warning(
+                "Vault source failed with {}; using explicit fallback policy",
+                type(error).__name__,
+            )
+            return {}
+        raise error from None
+
+    @staticmethod
+    def _context(cfg: VaultAccess) -> str:
+        """Return safe operational context without an address or credentials."""
+        return f"mount {cfg.mount_point!r}, path {cfg.app_name!r}"
+
     def __call__(self) -> dict[str, str | int | float | bool]:
         """Load configuration from Vault with caching support.
 
@@ -210,15 +241,19 @@ class PydanticVaultSource(PydanticBaseSettingsSource):
 
         :return: Dictionary of configuration key-value pairs
         """
-        # Try to create VaultAccess configuration
+        if not vault_environment_present():
+            logger.trace("Vault configuration is absent; skipping Vault source")
+            return {}
+
         try:
             cfg = VaultAccess()
-        except Exception as ex:
-            # Vault configuration not available (missing env vars or validation error)
-            logger.trace(
-                "Vault configuration not available, skipping Vault source: {}", ex
+        except ValidationError as cause:
+            return self._handle_failure(
+                VaultConfigurationError(
+                    "Vault configuration is partial or invalid",
+                    cause_type=type(cause).__name__,
+                )
             )
-            return self._result_config
 
         cache_key = f"{cfg.address}:{cfg.app_name}:{cfg.mount_point}"
 
@@ -257,19 +292,59 @@ class PydanticVaultSource(PydanticBaseSettingsSource):
                     self._cache_ttl_seconds,
                 )
 
-        except hvac.exceptions.Forbidden as ex:
-            logger.error("Access denied to Vault: {}", ex)
-        except hvac.exceptions.InvalidPath as ex:
-            logger.error("Path not found in Vault: {}", ex)
-        except hvac.exceptions.VaultDown as ex:
-            logger.error("Vault server is down: {}", ex)
-        except hvac.exceptions.VaultError as ex:
-            logger.error("Vault error: {}", ex)
-        except (ConnectionError, TimeoutError) as ex:
-            logger.error("Network error connecting to Vault: {}", ex)
-        except ValueError as ex:
-            logger.error("Authentication failed: {}", ex)
-        except Exception as ex:
-            logger.exception("Unexpected error loading from Vault: {}", ex)
+        except (
+            hvac.exceptions.Forbidden,
+            hvac.exceptions.Unauthorized,
+        ) as cause:
+            return self._handle_failure(
+                VaultAuthorizationError(
+                    f"Vault access was denied for {self._context(cfg)}",
+                    cause_type=type(cause).__name__,
+                )
+            )
+        except hvac.exceptions.InvalidPath as cause:
+            return self._handle_failure(
+                VaultPathNotFoundError(
+                    f"Vault secret was not found for {self._context(cfg)}",
+                    cause_type=type(cause).__name__,
+                )
+            )
+        except (
+            hvac.exceptions.VaultDown,
+            ConnectionError,
+            TimeoutError,
+        ) as cause:
+            return self._handle_failure(
+                VaultUnavailableError(
+                    "Vault is unavailable", cause_type=type(cause).__name__
+                )
+            )
+        except ValueError as cause:
+            return self._handle_failure(
+                VaultAuthenticationError(
+                    "Vault authentication failed",
+                    cause_type=type(cause).__name__,
+                )
+            )
+        except ValidationError as cause:
+            return self._handle_failure(
+                VaultConfigurationError(
+                    "Vault configuration became invalid while loading",
+                    cause_type=type(cause).__name__,
+                )
+            )
+        except (KeyError, TypeError) as cause:
+            return self._handle_failure(
+                VaultResponseError(
+                    f"Vault returned an invalid response for {self._context(cfg)}",
+                    cause_type=type(cause).__name__,
+                )
+            )
+        except hvac.exceptions.VaultError as cause:
+            return self._handle_failure(
+                VaultUnavailableError(
+                    "Vault request failed", cause_type=type(cause).__name__
+                )
+            )
 
         return self._result_config

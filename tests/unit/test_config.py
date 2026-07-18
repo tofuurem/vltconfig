@@ -3,9 +3,14 @@
 import os
 
 import pytest
-from pydantic import ValidationError
+from pydantic import SecretStr, ValidationError
 
 from vltconfig.config import VaultAccess
+
+
+def _secret_value(value: SecretStr | None) -> str | None:
+    """Reveal a test credential only for an explicit boundary assertion."""
+    return value.get_secret_value() if value is not None else None
 
 
 @pytest.mark.unit
@@ -24,7 +29,7 @@ class TestVaultAccess:
         config = VaultAccess()
 
         assert str(config.address) == "https://vault.example.com/"
-        assert config.token == "s.test-token"
+        assert _secret_value(config.token) == "s.test-token"
         assert config.username is None
         assert config.password is None
         assert config.app_name == "test-app"
@@ -45,7 +50,7 @@ class TestVaultAccess:
         assert str(config.address) == "https://vault.example.com/"
         assert config.token is None
         assert config.username == "test-user"
-        assert config.password == "test-password"
+        assert _secret_value(config.password) == "test-password"
         assert config.app_name == "test-app"
 
     def test_missing_credentials_raises_error(self, clean_env: None) -> None:
@@ -138,7 +143,7 @@ class TestVaultAccess:
 
         # Should be accessible via field names
         assert config.address is not None
-        assert config.token == "s.test-token"
+        assert _secret_value(config.token) == "s.test-token"
         assert config.app_name == "test-app"
 
     def test_both_token_and_userpass_prefers_token(self, clean_env: None) -> None:
@@ -155,9 +160,9 @@ class TestVaultAccess:
         config = VaultAccess()
 
         # Both should be present
-        assert config.token == "s.test-token"
+        assert _secret_value(config.token) == "s.test-token"
         assert config.username == "test-user"
-        assert config.password == "test-password"
+        assert _secret_value(config.password) == "test-password"
 
     def test_missing_app_name_raises_error(self, clean_env: None) -> None:
         """Test that missing VAULT_APP_NAME raises ValidationError.
@@ -196,8 +201,8 @@ class TestVaultAccess:
         config = VaultAccess()
 
         assert str(config.address) == "https://vault.example.com/"
-        assert config.role_id == "test-role-id"
-        assert config.secret_id == "test-secret-id"
+        assert _secret_value(config.role_id) == "test-role-id"
+        assert _secret_value(config.secret_id) == "test-secret-id"
         assert config.token is None
         assert config.username is None
         assert config.password is None
@@ -232,8 +237,8 @@ class TestVaultAccess:
         config = VaultAccess()
 
         # All should be present
-        assert config.token == "s.test-token"
+        assert _secret_value(config.token) == "s.test-token"
         assert config.username == "test-user"
-        assert config.password == "test-password"
-        assert config.role_id == "test-role-id"
-        assert config.secret_id == "test-secret-id"
+        assert _secret_value(config.password) == "test-password"
+        assert _secret_value(config.role_id) == "test-role-id"
+        assert _secret_value(config.secret_id) == "test-secret-id"

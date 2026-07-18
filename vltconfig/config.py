@@ -1,8 +1,35 @@
-from typing import Self
+import os
+from collections.abc import Mapping
+from typing import Final, Self
 
 from hvac.api.secrets_engines.kv_v2 import DEFAULT_MOUNT_POINT
-from pydantic import Field, HttpUrl, field_validator, model_validator
+from pydantic import Field, HttpUrl, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings
+
+VAULT_ENVIRONMENT_VARIABLES: Final[tuple[str, ...]] = (
+    "VAULT_ADDRESS",
+    "VAULT_TOKEN",
+    "VAULT_USERNAME",
+    "VAULT_PASSWORD",
+    "VAULT_ROLE_ID",
+    "VAULT_SECRET_ID",
+    "VAULT_APP_NAME",
+    "VAULT_MOUNT_POINT",
+)
+
+
+def vault_environment_present(environment: Mapping[str, str] | None = None) -> bool:
+    """Return whether any Vault access variable is present.
+
+    An entirely absent environment makes Vault an optional omitted source. Any
+    partial configuration is intentionally left for ``VaultAccess`` to reject.
+    """
+    values = environment if environment is not None else os.environ
+    configured_names = {name.casefold() for name in values}
+    return any(
+        variable.casefold() in configured_names
+        for variable in VAULT_ENVIRONMENT_VARIABLES
+    )
 
 
 class VaultAccess(BaseSettings):
@@ -44,7 +71,7 @@ class VaultAccess(BaseSettings):
         alias="VAULT_ADDRESS",
         description="URL of the Vault server (e.g., https://vault.example.com)",
     )
-    token: str | None = Field(
+    token: SecretStr | None = Field(
         default=None, alias="VAULT_TOKEN", description="Vault authentication token"
     )
     username: str | None = Field(
@@ -52,17 +79,17 @@ class VaultAccess(BaseSettings):
         alias="VAULT_USERNAME",
         description="Username for userpass authentication",
     )
-    password: str | None = Field(
+    password: SecretStr | None = Field(
         default=None,
         alias="VAULT_PASSWORD",
         description="Password for userpass authentication",
     )
-    role_id: str | None = Field(
+    role_id: SecretStr | None = Field(
         default=None,
         alias="VAULT_ROLE_ID",
         description="Role ID for AppRole authentication",
     )
-    secret_id: str | None = Field(
+    secret_id: SecretStr | None = Field(
         default=None,
         alias="VAULT_SECRET_ID",
         description="Secret ID for AppRole authentication",

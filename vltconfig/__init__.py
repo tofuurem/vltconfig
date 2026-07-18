@@ -1,3 +1,5 @@
+from typing import ClassVar
+
 from pydantic_settings import (
     BaseSettings,
     PydanticBaseSettingsSource,
@@ -5,6 +7,7 @@ from pydantic_settings import (
 )
 
 from vltconfig.json_source import PydanticJSONSource
+from vltconfig.policy import VaultFailurePolicy
 from vltconfig.vault_source import PydanticVaultSource
 
 
@@ -29,6 +32,7 @@ class VaultJsonConfig(BaseSettings):
     """
 
     model_config = SettingsConfigDict(populate_by_name=True)
+    vault_failure_policy: ClassVar[VaultFailurePolicy] = VaultFailurePolicy.STRICT
 
     @classmethod
     def settings_customise_sources(
@@ -50,7 +54,10 @@ class VaultJsonConfig(BaseSettings):
         """
         return (
             env_settings,
-            PydanticVaultSource(settings_cls),
+            PydanticVaultSource(
+                settings_cls,
+                failure_policy=cls.vault_failure_policy,
+            ),
             PydanticJSONSource(settings_cls),
             init_settings,
             dotenv_settings,
@@ -58,4 +65,4 @@ class VaultJsonConfig(BaseSettings):
         )
 
 
-__all__ = ["VaultJsonConfig"]
+__all__ = ["VaultFailurePolicy", "VaultJsonConfig"]

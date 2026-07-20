@@ -45,23 +45,23 @@ class VaultAccess(BaseSettings):
     Example:
         # Token authentication
         os.environ["VAULT_ADDRESS"] = "https://vault.example.com"
-        os.environ["VAULT_TOKEN"] = "s.your-vault-token"
+        os.environ["VAULT_TOKEN"] = "not-a-real-vault-token"
         os.environ["VAULT_APP_NAME"] = "myapp/config"
 
         config = VaultAccess()
 
         # Username/Password authentication
         os.environ["VAULT_ADDRESS"] = "https://vault.example.com"
-        os.environ["VAULT_USERNAME"] = "readonly"
-        os.environ["VAULT_PASSWORD"] = "secret-password"
+        os.environ["VAULT_USERNAME"] = "example-only-user"
+        os.environ["VAULT_PASSWORD"] = "not-a-real-password"
         os.environ["VAULT_APP_NAME"] = "myapp/config"
 
         config = VaultAccess()
 
         # AppRole authentication
         os.environ["VAULT_ADDRESS"] = "https://vault.example.com"
-        os.environ["VAULT_ROLE_ID"] = "your-role-id"
-        os.environ["VAULT_SECRET_ID"] = "your-secret-id"
+        os.environ["VAULT_ROLE_ID"] = "not-a-real-role-id"
+        os.environ["VAULT_SECRET_ID"] = "not-a-real-secret-id"
         os.environ["VAULT_APP_NAME"] = "myapp/config"
 
         config = VaultAccess()

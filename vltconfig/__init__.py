@@ -66,8 +66,8 @@ class VaultJsonConfig(BaseSettings):
 
     Example:
         class AppConfig(VaultJsonConfig):
-            database_url: str
-            api_key: str
+            service_name: str
+            database_host: str
             debug: bool = False
     """
 

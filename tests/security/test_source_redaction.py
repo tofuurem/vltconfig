@@ -5,7 +5,7 @@ import traceback
 from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
-from unittest.mock import Mock, patch
+from unittest.mock import patch
 
 import hvac.exceptions
 import pytest
@@ -14,7 +14,8 @@ from pydantic_settings import BaseSettings
 
 from vltconfig.errors import JSONDecodeError, VaultAuthorizationError
 from vltconfig.json_source import PydanticJSONSource
-from vltconfig.vault_source import PydanticVaultSource, _log_retry_attempt
+from vltconfig.retry import log_retry_attempt
+from vltconfig.vault_source import PydanticVaultSource
 
 
 @contextmanager
@@ -68,12 +69,13 @@ def test_vault_upstream_details_are_absent_from_errors_and_logs(
 def test_retry_log_omits_upstream_exception_text() -> None:
     """Retry telemetry exposes attempt counts, not exception payloads."""
     canary = "retry-redaction-canary"
-    retry_state = Mock()
-    retry_state.outcome.exception.return_value = hvac.exceptions.VaultDown(canary)
-    retry_state.attempt_number = 2
+    error = hvac.exceptions.VaultDown(canary)
 
     with _captured_logs() as messages:
-        _log_retry_attempt(retry_state)
+        try:
+            raise error
+        except hvac.exceptions.VaultDown:
+            log_retry_attempt(2, 3)
 
     assert canary not in "\n".join(messages)
     assert any("attempt 2/3" in message for message in messages)

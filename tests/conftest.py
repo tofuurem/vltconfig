@@ -59,6 +59,9 @@ def clean_env() -> Generator[None, None, None]:
         "VAULT_SECRET_ID",
         "VAULT_APP_NAME",
         "VAULT_MOUNT_POINT",
+        "VAULT_CACHE_DISABLED",
+        "VAULT_CACHE_TTL",
+        "VAULT_CACHE_MAX_ENTRIES",
         "PYDANTIC_JSON_PATH",
     ]
     for var in vault_vars:

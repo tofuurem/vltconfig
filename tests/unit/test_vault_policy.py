@@ -21,6 +21,12 @@ from vltconfig.errors import (
 from vltconfig.vault_source import PydanticVaultSource
 
 
+@pytest.fixture(autouse=True)
+def _disable_retry_sleep(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Policy translation tests should never use production backoff."""
+    monkeypatch.setattr("vltconfig.retry.time.sleep", lambda _delay: None)
+
+
 def _configure_vault() -> None:
     """Set a complete, fake token configuration."""
     os.environ.update(

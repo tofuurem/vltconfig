@@ -1,21 +1,15 @@
-import os
-from datetime import datetime, timedelta
-from typing import Any, ClassVar
+from typing import Any
 
 import hvac
 import hvac.exceptions
+import requests.exceptions
 from loguru import logger
 from pydantic import ValidationError
 from pydantic.fields import FieldInfo
 from pydantic_settings import BaseSettings, PydanticBaseSettingsSource
-from tenacity import (
-    RetryCallState,
-    retry,
-    retry_if_exception_type,
-    stop_after_attempt,
-    wait_exponential,
-)
 
+from vltconfig.auth import VaultAuthenticator, VaultAuthenticatorProtocol
+from vltconfig.cache import VaultCache
 from vltconfig.config import VaultAccess, vault_environment_present
 from vltconfig.errors import (
     VaultAuthenticationError,
@@ -27,91 +21,12 @@ from vltconfig.errors import (
     VaultUnavailableError,
 )
 from vltconfig.policy import VaultFailurePolicy
-
-
-def _log_retry_attempt(retry_state: RetryCallState) -> None:
-    """Log retry attempt details.
-
-    :param retry_state: Current retry state information
-    """
-    logger.warning(
-        "Retrying transient Vault request (attempt {}/{})",
-        retry_state.attempt_number,
-        3,  # max attempts
-    )
+from vltconfig.retry import VaultRetry, VaultRetryProtocol
 
 
 def _authenticate_vault(cfg: VaultAccess) -> hvac.Client:
-    """Authenticate to Vault using configured method with fallback support.
-
-    Tries authentication methods in priority order, falling back to next method if current fails:
-    1. Token authentication (VAULT_TOKEN)
-    2. AppRole authentication (VAULT_ROLE_ID + VAULT_SECRET_ID)
-    3. Username/Password authentication (VAULT_USERNAME + VAULT_PASSWORD)
-
-    If multiple methods are configured and one fails, the next available method is tried.
-    This provides resilience if one authentication method is temporarily unavailable.
-
-    :param cfg: Vault configuration with credentials
-    :return: Authenticated hvac Client instance
-    :raises ValueError: If all configured authentication methods fail
-    """
-    logger.trace("Starting Vault authentication to {}", cfg.address)
-    client = hvac.Client(url=str(cfg.address))
-    failed_methods: list[str] = []
-
-    # Try token authentication
-    if cfg.token:
-        logger.trace("Trying token authentication")
-        try:
-            client.token = cfg.token.get_secret_value()
-            if not client.is_authenticated():
-                raise ValueError("Token is invalid or expired")
-            logger.trace("Successfully authenticated with token")
-            return client
-        except (
-            ValueError,
-            hvac.exceptions.Forbidden,
-            hvac.exceptions.Unauthorized,
-        ):
-            failed_methods.append("token")
-            logger.trace("Token authentication failed; trying next configured method")
-
-    # Try AppRole authentication
-    if cfg.role_id and cfg.secret_id:
-        logger.trace("Trying AppRole authentication")
-        try:
-            resp = client.auth.approle.login(
-                role_id=cfg.role_id.get_secret_value(),
-                secret_id=cfg.secret_id.get_secret_value(),
-            )
-            client.token = resp["auth"]["client_token"]
-            logger.trace("Successfully authenticated with AppRole")
-            return client
-        except (hvac.exceptions.InvalidRequest, hvac.exceptions.Forbidden):
-            failed_methods.append("AppRole")
-            logger.trace("AppRole authentication failed; trying next configured method")
-
-    # Try userpass authentication
-    if cfg.username and cfg.password:
-        logger.trace("Trying userpass authentication")
-        try:
-            resp = client.auth.userpass.login(
-                username=cfg.username,
-                password=cfg.password.get_secret_value(),
-            )
-            client.token = resp["auth"]["client_token"]
-            logger.trace("Successfully authenticated with userpass")
-            return client
-        except (hvac.exceptions.InvalidRequest, hvac.exceptions.Forbidden):
-            failed_methods.append("userpass")
-            logger.trace("Userpass authentication failed")
-
-    # All methods failed
-    if failed_methods:
-        methods = ", ".join(failed_methods)
-        raise ValueError(f"All authentication methods failed ({methods})")
-    raise ValueError("No authentication method configured")
+    """Compatibility adapter around the isolated production authenticator."""
+    return VaultAuthenticator().authenticate(cfg)
 
 
 class PydanticVaultSource(PydanticBaseSettingsSource):
@@ -121,41 +36,29 @@ class PydanticVaultSource(PydanticBaseSettingsSource):
     Implements caching with configurable TTL to reduce Vault load.
     """
 
-    _cache: ClassVar[dict[str, tuple[dict[str, Any], datetime]]] = {}
-    _cache_ttl_seconds: ClassVar[int] = 300  # 5 minutes default
-    _cache_enabled: ClassVar[bool] = True
-
     def __init__(
         self,
         settings_cls: type[BaseSettings],
         *,
         failure_policy: VaultFailurePolicy = VaultFailurePolicy.STRICT,
+        authenticator: VaultAuthenticatorProtocol | None = None,
+        retry_policy: VaultRetryProtocol | None = None,
+        cache: VaultCache | None = None,
     ) -> None:
         """Initialize Vault settings source.
 
         :param settings_cls: Pydantic settings class
         """
         super().__init__(settings_cls)
-        self._result_config: dict[str, str | int | float | bool] = {}
+        self._result_config: dict[str, Any] = {}
         self._failure_policy = failure_policy
-
-        # Allow disabling cache via environment variable
-        cache_disabled = os.getenv("VAULT_CACHE_DISABLED", "").lower() in (
-            "true",
-            "1",
-            "yes",
-        )
-        if cache_disabled:
-            PydanticVaultSource._cache_enabled = False
-
-        # Allow custom TTL via environment variable
-        cache_ttl = os.getenv("VAULT_CACHE_TTL")
-        if cache_ttl and cache_ttl.isdigit():
-            PydanticVaultSource._cache_ttl_seconds = int(cache_ttl)
+        self._authenticator = authenticator
+        self._retry_policy = retry_policy if retry_policy is not None else VaultRetry()
+        self._cache = cache if cache is not None else VaultCache.from_environment()
 
     def get_field_value(
         self, field: FieldInfo, field_name: str
-    ) -> tuple[str | int | float | bool | None, str, bool]:
+    ) -> tuple[Any, str, bool]:
         """Get field value from loaded Vault secrets.
 
         :param field: Pydantic field information
@@ -167,20 +70,7 @@ class PydanticVaultSource(PydanticBaseSettingsSource):
             return (None, field_name, False)
         return (value, field_name, True)
 
-    @retry(
-        stop=stop_after_attempt(3),
-        wait=wait_exponential(multiplier=1, min=2, max=10),
-        retry=retry_if_exception_type(
-            (
-                hvac.exceptions.VaultDown,
-                ConnectionError,
-                TimeoutError,
-            )
-        ),
-        before_sleep=_log_retry_attempt,
-        reraise=True,
-    )
-    def _get_secret_from_vault(self) -> None:
+    def _get_secret_from_vault(self, cfg: VaultAccess) -> None:
         """Fetch secrets from Vault KV v2 store with retry logic.
 
         Retries up to 3 times with exponential backoff for transient errors:
@@ -195,8 +85,11 @@ class PydanticVaultSource(PydanticBaseSettingsSource):
 
         :raises hvac.exceptions.VaultError: If all retries exhausted or non-retryable error
         """
-        cfg = VaultAccess()
-        client = _authenticate_vault(cfg)
+        client = (
+            self._authenticator.authenticate(cfg)
+            if self._authenticator is not None
+            else _authenticate_vault(cfg)
+        )
 
         logger.trace(
             "Requesting secrets from Vault: path={}, mount={}",
@@ -205,7 +98,9 @@ class PydanticVaultSource(PydanticBaseSettingsSource):
         )
 
         secret = client.secrets.kv.v2.read_secret_version(
-            path=cfg.app_name, mount_point=cfg.mount_point
+            path=cfg.app_name,
+            mount_point=cfg.mount_point,
+            raise_on_deleted_version=True,
         )
         self._result_config = secret["data"]["data"]
 
@@ -213,9 +108,7 @@ class PydanticVaultSource(PydanticBaseSettingsSource):
             "Successfully loaded {} secrets from Vault", len(self._result_config)
         )
 
-    def _handle_failure(
-        self, error: VaultSourceError
-    ) -> dict[str, str | int | float | bool]:
+    def _handle_failure(self, error: VaultSourceError) -> dict[str, Any]:
         """Apply the configured strict or explicit fallback failure policy."""
         if self._failure_policy is VaultFailurePolicy.FALLBACK:
             logger.warning(
@@ -230,7 +123,11 @@ class PydanticVaultSource(PydanticBaseSettingsSource):
         """Return safe operational context without an address or credentials."""
         return f"mount {cfg.mount_point!r}, path {cfg.app_name!r}"
 
-    def __call__(self) -> dict[str, str | int | float | bool]:
+    def invalidate_cache(self) -> None:
+        """Invalidate every entry owned by this source's cache collaborator."""
+        self._cache.invalidate()
+
+    def __call__(self) -> dict[str, Any]:
         """Load configuration from Vault with caching support.
 
         Caches secrets for TTL seconds to reduce Vault load.
@@ -255,42 +152,27 @@ class PydanticVaultSource(PydanticBaseSettingsSource):
                 )
             )
 
-        cache_key = f"{cfg.address}:{cfg.app_name}:{cfg.mount_point}"
-
-        # Check cache if enabled
-        if self._cache_enabled and cache_key in self._cache:
-            cached_data, timestamp = self._cache[cache_key]
-            age = datetime.now() - timestamp
-
-            if age < timedelta(seconds=self._cache_ttl_seconds):
-                logger.trace(
-                    "Cache hit for {} (age: {}s, TTL: {}s)",
-                    cache_key,
-                    int(age.total_seconds()),
-                    self._cache_ttl_seconds,
-                )
-                self._result_config = cached_data
-                return self._result_config
-            else:
-                logger.trace(
-                    "Cache expired for {} (age: {}s > TTL: {}s)",
-                    cache_key,
-                    int(age.total_seconds()),
-                    self._cache_ttl_seconds,
-                )
+        cache_key = self._cache.key_for(cfg)
+        cached_data = self._cache.get(cache_key)
+        if cached_data is not None:
+            logger.trace(
+                "Vault cache hit for path={}, mount={}",
+                cfg.app_name,
+                cfg.mount_point,
+            )
+            self._result_config = cached_data
+            return self._result_config
 
         # Load from Vault
         try:
-            self._get_secret_from_vault()
+            self._retry_policy.call(lambda: self._get_secret_from_vault(cfg))
 
-            # Store in cache if enabled
-            if self._cache_enabled:
-                self._cache[cache_key] = (self._result_config.copy(), datetime.now())
-                logger.trace(
-                    "Cached secrets for {} (TTL: {}s)",
-                    cache_key,
-                    self._cache_ttl_seconds,
-                )
+            self._cache.put(cache_key, self._result_config)
+            logger.trace(
+                "Vault response cached for path={}, mount={}",
+                cfg.app_name,
+                cfg.mount_point,
+            )
 
         except (
             hvac.exceptions.Forbidden,
@@ -311,6 +193,8 @@ class PydanticVaultSource(PydanticBaseSettingsSource):
             )
         except (
             hvac.exceptions.VaultDown,
+            requests.exceptions.ConnectionError,
+            requests.exceptions.Timeout,
             ConnectionError,
             TimeoutError,
         ) as cause:

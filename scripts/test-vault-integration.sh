@@ -37,4 +37,9 @@ host_port="${port_mapping##*:}"
 export VLTCONFIG_INTEGRATION_VAULT_ADDRESS="http://127.0.0.1:$host_port"
 export VLTCONFIG_INTEGRATION_VAULT_ROOT_TOKEN="$root_token"
 
-uv run --frozen pytest tests/integration -q --no-cov
+test_targets=(tests/integration)
+if (($# > 0)); then
+  test_targets=("$@")
+fi
+
+uv run --frozen pytest "${test_targets[@]}" -q --no-cov

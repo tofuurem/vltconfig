@@ -13,6 +13,7 @@ class VaultIntegration:
 
     address: str
     read_token: str
+    write_token: str
     denied_token: str
     role_id: str
     secret_id: str
@@ -45,6 +46,15 @@ path "secret/data/integration/*" {
     read_token = client.auth.token.create(
         policies=["vltconfig-integration-read"],
     )["auth"]["client_token"]
+    write_policy = """
+path "secret/data/integration/*" {
+  capabilities = ["create", "read", "update"]
+}
+"""
+    client.sys.create_or_update_policy("vltconfig-integration-write", write_policy)
+    write_token = client.auth.token.create(
+        policies=["vltconfig-integration-write"],
+    )["auth"]["client_token"]
     denied_token = client.auth.token.create(
         policies=["default"],
     )["auth"]["client_token"]
@@ -73,6 +83,7 @@ path "secret/data/integration/*" {
     return VaultIntegration(
         address=address,
         read_token=read_token,
+        write_token=write_token,
         denied_token=denied_token,
         role_id=role_id,
         secret_id=secret_id,

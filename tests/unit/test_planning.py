@@ -194,3 +194,55 @@ def test_plan_contract_is_frozen_and_has_stable_serialization() -> None:
     attribute = "message"
     with pytest.raises(FrozenInstanceError):
         setattr(change, attribute, "changed")
+
+
+@pytest.mark.unit
+def test_wildcard_empty_and_out_of_range_replacement_paths_fail_closed() -> None:
+    """Only concrete declared paths can authorize a replacement."""
+
+    class Item(BaseModel):
+        token: str
+
+    class Settings(BaseModel):
+        items: list[Item]
+
+    plan = build_plan(
+        Settings,
+        {"items": [{"token": "old"}]},
+        replacement_paths=((), ("items", "*", "token"), ("items", 3, "token")),
+        proposed_values={"items": [{"token": "new"}]},
+    )
+
+    assert plan.executable is False
+    assert (
+        sum(
+            change.category is ChangeCategory.REPLACEMENT_NOT_DECLARED
+            for change in plan.changes
+        )
+        == 2
+    )
+    assert (
+        sum(
+            change.category is ChangeCategory.REPLACEMENT_VALUE_MISSING
+            for change in plan.changes
+        )
+        == 1
+    )
+
+
+@pytest.mark.unit
+def test_empty_proposed_mapping_is_a_structural_ignored_value() -> None:
+    """An empty mapping still has an address when it is not explicitly allowed."""
+
+    class Settings(BaseModel):
+        labels: dict[str, str]
+
+    plan = build_plan(
+        Settings,
+        {"labels": {"team": "platform"}},
+        proposed_values={"labels": {}},
+    )
+
+    assert [(change.category, change.path) for change in plan.changes] == [
+        (ChangeCategory.PROPOSED_VALUE_IGNORED, ("labels",))
+    ]

@@ -1,16 +1,22 @@
 """Payload and planning redaction regression tests."""
 
 import traceback
-from collections.abc import Iterator
+from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
+from copy import deepcopy
+from dataclasses import dataclass
 from pprint import pformat
+from typing import Any
 
 import pytest
 from loguru import logger
 from pydantic import BaseModel, field_validator, model_validator
 
+from vltconfig import apply_configuration
+from vltconfig.errors import ConfigurationApplyError
 from vltconfig.planning import build_plan, render_configuration_plan
 from vltconfig.validation import render_validation_report, validate_payload
+from vltconfig.vault_gateway import VersionedSecret
 
 
 @contextmanager
@@ -157,4 +163,64 @@ def test_current_and_proposed_values_never_reach_plan_channels(
     )
 
     for canary in (current_canary, proposed_canary, ignored_canary):
+        assert canary not in diagnostics
+
+
+@dataclass
+class _ReplacementGateway:
+    """Capture a replacement write while keeping it out of public results."""
+
+    payload: dict[str, Any]
+    written: dict[str, Any] | None = None
+
+    def read(self) -> VersionedSecret:
+        return VersionedSecret.from_payload(version=3, payload=self.payload)
+
+    def create(self, payload: Mapping[str, Any]) -> None:
+        self.written = deepcopy(dict(payload))
+
+    def update(self, payload: Mapping[str, Any], *, version: int) -> None:
+        self.written = deepcopy(dict(payload))
+
+
+@pytest.mark.unit
+def test_addressed_apply_result_and_errors_never_expose_values() -> None:
+    """Replacement success and validation failure share the redaction boundary."""
+    current_canary = "apply-security-current-canary"
+    proposed_canary = "apply-security-proposed-canary"
+    invalid_canary = "apply-security-invalid-canary"
+
+    class Settings(BaseModel):
+        token: str
+        workers: int
+
+    gateway = _ReplacementGateway(payload={"token": current_canary, "workers": 2})
+    result = apply_configuration(
+        Settings,
+        gateway,
+        replacement_paths=(("token",),),
+        proposed_values={"token": proposed_canary},
+    )
+
+    invalid_gateway = _ReplacementGateway(
+        payload={"token": current_canary, "workers": 2}
+    )
+    with pytest.raises(ConfigurationApplyError) as captured:
+        apply_configuration(
+            Settings,
+            invalid_gateway,
+            replacement_paths=(("workers",),),
+            proposed_values={"workers": invalid_canary},
+        )
+
+    diagnostics = "\n".join(
+        (
+            repr(result),
+            str(result),
+            result.to_json(),
+            repr(captured.value),
+            str(captured.value),
+        )
+    )
+    for canary in (current_canary, proposed_canary, invalid_canary):
         assert canary not in diagnostics

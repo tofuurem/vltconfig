@@ -30,6 +30,10 @@ class YAMLDependencyError(VltConfigError):
     """YAML rendering was requested without the named optional dependency."""
 
 
+class ConfigurationApplyError(VltConfigError):
+    """A configuration plan cannot be applied safely."""
+
+
 class JSONSourceError(ConfigurationSourceError):
     """Base class for an explicitly configured JSON source failure."""
 
@@ -76,3 +80,7 @@ class VaultUnavailableError(VaultSourceError):
 
 class VaultResponseError(VaultSourceError):
     """Vault returned a response that could not be consumed safely."""
+
+
+class VaultConflictError(VaultSourceError):
+    """Vault rejected a create or update because its CAS version was stale."""

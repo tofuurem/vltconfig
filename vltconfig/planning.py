@@ -25,6 +25,7 @@ class ChangeCategory(StrEnum):
     """Stable structural changes a caller may review before a Vault write."""
 
     ADD_REQUIRED = "add_required"
+    UNRESOLVED_PLACEHOLDER = "unresolved_placeholder"
     OPTIONAL_NO_CHANGE = "optional_no_change"
     UNKNOWN_KEY = "unknown_key"
     TYPE_CHANGE = "type_change"
@@ -122,6 +123,8 @@ def _find_field(
     path: ConfigurationPath,
 ) -> FieldSchema | None:
     """Find a declared field by any accepted Vault input path."""
+    if not path or "*" in path:
+        return None
     return next(
         (
             field
@@ -209,13 +212,18 @@ def build_plan(
     changes: list[PlanChange] = []
 
     for finding in validate_payload(schema, current_payload).findings:
-        if finding.path in replacement_set:
+        if any(_path_is_covered(finding.path, path) for path in replacements):
             continue
-        if finding.code in (FindingCode.MISSING_REQUIRED, FindingCode.PLACEHOLDER):
+        if finding.code is FindingCode.MISSING_REQUIRED:
             category = ChangeCategory.ADD_REQUIRED
             severity = Severity.INFO
             message = "required field will be initialized"
             executable = True
+        elif finding.code is FindingCode.PLACEHOLDER:
+            category = ChangeCategory.UNRESOLVED_PLACEHOLDER
+            severity = Severity.ERROR
+            message = "required placeholder must be replaced"
+            executable = False
         elif finding.code is FindingCode.UNKNOWN_KEY:
             category = ChangeCategory.UNKNOWN_KEY
             severity = Severity.WARNING
@@ -318,6 +326,7 @@ def render_configuration_plan(plan: ConfigurationPlan) -> str:
     """Render a human-readable plan containing structural metadata only."""
     labels = {
         ChangeCategory.ADD_REQUIRED: "add required field",
+        ChangeCategory.UNRESOLVED_PLACEHOLDER: "replace unresolved placeholder",
         ChangeCategory.OPTIONAL_NO_CHANGE: "optional; no change",
         ChangeCategory.UNKNOWN_KEY: "preserve unknown key",
         ChangeCategory.TYPE_CHANGE: "incompatible field",

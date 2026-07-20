@@ -14,6 +14,18 @@ class ConfigurationSourceError(VltConfigError):
     """Base class for errors raised while loading a configuration source."""
 
 
+class SchemaError(VltConfigError):
+    """Base class for safe Pydantic schema inspection failures."""
+
+
+class UnsupportedSchemaError(SchemaError):
+    """A model or field shape cannot be represented as a Vault payload."""
+
+
+class RecursiveSchemaError(UnsupportedSchemaError):
+    """A recursive model cannot produce a finite Vault payload schema."""
+
+
 class JSONSourceError(ConfigurationSourceError):
     """Base class for an explicitly configured JSON source failure."""
 

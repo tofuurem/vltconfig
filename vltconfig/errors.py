@@ -26,6 +26,10 @@ class RecursiveSchemaError(UnsupportedSchemaError):
     """A recursive model cannot produce a finite Vault payload schema."""
 
 
+class YAMLDependencyError(VltConfigError):
+    """YAML rendering was requested without the named optional dependency."""
+
+
 class JSONSourceError(ConfigurationSourceError):
     """Base class for an explicitly configured JSON source failure."""
 

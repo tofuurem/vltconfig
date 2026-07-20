@@ -38,6 +38,9 @@ Homepage = "https://github.com/tofuurem/vltconfig"
 Repository = "https://github.com/tofuurem/vltconfig"
 Issues = "https://github.com/tofuurem/vltconfig/issues"
 
+[project.optional-dependencies]
+yaml = ["ruamel.yaml>=0.19.1"]
+
 [tool.setuptools.packages.find]
 include = ["vltconfig*"]
 
@@ -52,6 +55,7 @@ dev = [
     "pytest>=9.1.1",
     "pytest-cov>=7.1.0",
     "ruff>=0.15.20",
+    "ruamel.yaml>=0.19.1",
     "twine>=6.2.0",
     "ty>=0.0.60",
     "zizmor>=1.27.0",

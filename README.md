@@ -1,336 +1,353 @@
 # vltconfig
 
-> Pydantic settings from HashiCorp Vault KV and JSON with caching and retry
+`vltconfig` is a typed configuration library for projects that use Pydantic
+Settings, HashiCorp Vault KV v2, and an optional local `config.json`. It also
+provides a schema-driven CLI for generating value-free configuration templates,
+checking Vault contents, previewing changes, and applying only safe,
+CAS-protected updates.
 
 [![PyPI version](https://badge.fury.io/py/vltconfig.svg)](https://pypi.org/project/vltconfig/)
-[![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Python 3.11-3.14](https://img.shields.io/badge/python-3.11%E2%80%933.14-blue.svg)](https://www.python.org/downloads/)
+[![License: MIT](https://img.shields.io/badge/license-MIT-yellow.svg)](LICENSE)
 
-## Features
+## What it provides
 
-- ✨ **Multi-source configuration**: Load from Vault KV v2, JSON files, and environment variables
-- 🔒 **Type-safe**: Full pydantic v2 validation with complete type hints
-- 🔁 **Retry logic**: Automatic retries with exponential backoff for transient failures
-- 💾 **Caching**: In-memory cache with configurable TTL (5 min default)
-- 🔐 **Multiple auth methods**: Token, AppRole, and Username/Password authentication
-- 🎯 **Fallback support**: Automatic fallback between authentication methods
-- 📝 **Comprehensive logging**: Structured logging with loguru
-- ✅ **Well tested**: 96%+ test coverage with 53 tests
+- `VaultJsonConfig`, a Pydantic Settings base class with stable source priority.
+- Vault token, AppRole, and userpass authentication in a defined order.
+- Typed, redacted failures instead of silently hiding configured-source errors.
+- Transient-only retries and bounded, thread-safe, per-source caching.
+- Model inspection without instantiating settings or contacting Vault.
+- JSON templates and optional commented YAML templates containing no defaults by
+  default and no secret values.
+- Sanitized JSON Schema and Markdown field references.
+- Value-free `check`, `plan`, and `apply` reports.
+- KV v2 check-and-set writes that preserve existing and unknown keys.
+- Inline typing metadata through the packaged `py.typed` marker.
+
+Python 3.11, 3.12, 3.13, and 3.14 are blocking CI targets. Python 3.15 is a
+non-blocking prerelease target and is not yet advertised as stable support.
 
 ## Installation
 
-```bash
-pip install vltconfig
-```
-
-## Quick Start
-
-```python
-from vltconfig import VaultJsonConfig
-from pydantic import Field
-
-# Define your configuration model
-class AppConfig(VaultJsonConfig):
-    database_url: str = Field(description="Database connection string")
-    api_key: str = Field(description="API key for external service")
-    debug: bool = Field(default=False, description="Debug mode")
-    max_connections: int = Field(default=10, description="Max DB connections")
-
-# Configuration is automatically loaded from:
-# 1. Environment variables (highest priority)
-# 2. HashiCorp Vault KV store
-# 3. JSON file (config.json)
-# 4. Default values (lowest priority)
-config = AppConfig()
-
-print(config.database_url)
-print(config.api_key)
-```
-
-## Authentication
-
-### Token Authentication
-
-```python
-import os
-
-os.environ["VAULT_ADDRESS"] = "https://vault.example.com"
-os.environ["VAULT_TOKEN"] = "s.your-vault-token"
-os.environ["VAULT_APP_NAME"] = "myapp/config"
-
-config = AppConfig()
-```
-
-### AppRole Authentication
-
-```python
-import os
-
-os.environ["VAULT_ADDRESS"] = "https://vault.example.com"
-os.environ["VAULT_ROLE_ID"] = "your-role-id"
-os.environ["VAULT_SECRET_ID"] = "your-secret-id"
-os.environ["VAULT_APP_NAME"] = "myapp/config"
-
-config = AppConfig()
-```
-
-### Username/Password Authentication
-
-```python
-import os
-
-os.environ["VAULT_ADDRESS"] = "https://vault.example.com"
-os.environ["VAULT_USERNAME"] = "readonly"
-os.environ["VAULT_PASSWORD"] = "your-password"
-os.environ["VAULT_APP_NAME"] = "myapp/config"
-
-config = AppConfig()
-```
-
-### Authentication Fallback
-
-If multiple authentication methods are configured, `vltconfig` will automatically try them in order:
-
-1. Token authentication (`VAULT_TOKEN`)
-2. AppRole authentication (`VAULT_ROLE_ID` + `VAULT_SECRET_ID`)
-3. Username/Password authentication (`VAULT_USERNAME` + `VAULT_PASSWORD`)
-
-This provides resilience if one authentication method is temporarily unavailable.
-
-## Configuration
-
-### Environment Variables
-
-#### Required
-
-- `VAULT_ADDRESS`: URL of the Vault server (e.g., `https://vault.example.com`)
-- `VAULT_APP_NAME`: Path to secrets in Vault KV store (e.g., `myapp/config`)
-
-#### Authentication (provide at least one method)
-
-- `VAULT_TOKEN`: Vault authentication token
-- `VAULT_USERNAME` + `VAULT_PASSWORD`: Username/password authentication
-- `VAULT_ROLE_ID` + `VAULT_SECRET_ID`: AppRole authentication
-
-#### Optional
-
-- `VAULT_MOUNT_POINT`: Mount point for Vault KV engine (default: `secret`)
-- `PYDANTIC_JSON_PATH`: Path to directory containing `config.json`
-- `VAULT_CACHE_DISABLED`: Set to `true` to disable caching
-- `VAULT_CACHE_TTL`: Cache TTL in seconds (default: `300`)
-
-## Caching
-
-`vltconfig` caches secrets from Vault for 5 minutes by default to reduce load on Vault servers:
-
-```python
-import os
-
-# Disable caching
-os.environ["VAULT_CACHE_DISABLED"] = "true"
-
-# Or set custom TTL (in seconds)
-os.environ["VAULT_CACHE_TTL"] = "600"  # 10 minutes
-
-config = AppConfig()
-```
-
-## Retry Logic
-
-Transient failures are automatically retried with exponential backoff:
-
-- **Retries**: Up to 3 attempts
-- **Backoff**: Exponential (2s, 4s, 8s)
-- **Retryable errors**: Vault server down, connection errors, timeouts
-- **Non-retryable errors**: Authentication failures, permission errors, invalid paths
-
-## Custom Mount Point
-
-If your Vault KV engine uses a custom mount point:
-
-```python
-import os
-
-os.environ["VAULT_MOUNT_POINT"] = "custom-kv"
-os.environ["VAULT_APP_NAME"] = "myapp/config"
-
-config = AppConfig()
-```
-
-## JSON Configuration
-
-You can also load configuration from a JSON file:
-
-```python
-import os
-
-# Create config.json
-os.makedirs("config", exist_ok=True)
-with open("config/config.json", "w") as f:
-    f.write('{"database_url": "postgresql://localhost/mydb", "debug": true}')
-
-# Point to config directory
-os.environ["PYDANTIC_JSON_PATH"] = "./config"
-
-config = AppConfig()
-```
-
-## Configuration Priority
-
-Values are loaded in the following priority order (highest to lowest):
-
-1. **Environment variables** (highest priority)
-2. **Vault KV store**
-3. **JSON file** (`config.json`)
-4. **Initialization parameters**
-5. **.env file**
-6. **Default values** (lowest priority)
-
-## How It Works
-
-`vltconfig` extends `pydantic-settings` to add custom settings sources:
-
-```python
-from vltconfig import VaultJsonConfig
-
-class AppConfig(VaultJsonConfig):
-    # Your fields here
-    pass
-
-# When you instantiate AppConfig(), it:
-# 1. Connects to Vault using configured authentication
-# 2. Fetches secrets from the specified path
-# 3. Loads config.json if available
-# 4. Merges all sources according to priority
-# 5. Validates using pydantic
-# 6. Returns type-safe configuration object
-```
-
-## Migration from vault-pydantic-simple
-
-**⚠️ Breaking Change in v1.0.0**: The import path has changed.
-
-If you're upgrading from `vault-pydantic-simple`:
+With `uv`:
 
 ```bash
-# Uninstall old package
-pip uninstall vault-pydantic-simple
-
-# Install new package
-pip install vltconfig
+uv add vltconfig
 ```
 
-**Update your imports**:
+With `pip`:
+
+```bash
+python -m pip install vltconfig
+```
+
+YAML is only needed when rendering YAML templates. It is intentionally optional:
+
+```bash
+uv add 'vltconfig[yaml]'
+```
+
+## Define and load settings
 
 ```python
-# Old (v0.x)
-from vlt import VaultJsonConfig
+from pydantic import Field, SecretStr
 
-# New (v1.0.0+)
 from vltconfig import VaultJsonConfig
+
+
+class AppConfig(VaultJsonConfig):
+    database_url: str = Field(description="Application database URL")
+    api_token: SecretStr = Field(description="External service token")
+    workers: int = Field(default=4, ge=1)
+
+
+settings = AppConfig()
 ```
 
-## Requirements
+Do not log or print a settings model that may contain credentials. Use the
+validated object only at the application boundary that needs it.
 
-- Python >= 3.11
-- pydantic >= 2.10.6
-- pydantic-settings >= 2.7.1
-- hvac >= 2.3.0 (HashiCorp Vault client)
-- loguru >= 0.7.3 (logging)
-- tenacity >= 9.0.0 (retry logic)
+### Source priority
+
+Earlier sources have higher priority:
+
+1. Environment variables.
+2. HashiCorp Vault KV v2.
+3. `config.json`.
+4. Initializer arguments.
+5. Dotenv values.
+6. Docker/Kubernetes file secrets.
+
+Model defaults are applied by Pydantic after source resolution. This ordering is
+compatibility-sensitive.
+
+Vault is optional only when every Vault environment variable is absent. Once any
+Vault variable is present, partial configuration, authentication failure,
+authorization failure, a missing path, an invalid response, or an unavailable
+server raises a typed `VaultSourceError` subclass by default. Lower-priority JSON
+or initializer values cannot hide that failure.
+
+To retain the v1 fail-open Vault behavior temporarily during migration, opt in on
+one settings class:
+
+```python
+from vltconfig import VaultFailurePolicy, VaultJsonConfig
+
+
+class LegacyConfig(VaultJsonConfig):
+    vault_failure_policy = VaultFailurePolicy.FALLBACK
+
+    endpoint: str
+```
+
+## Schema-driven Vault workflow
+
+A model is addressed as `<importable-module>:<class>`. Run the installed command
+from the project directory so local modules are importable. The repository
+examples use `examples.settings:AppConfig`.
+
+Generate a base document containing placeholders only for required values:
+
+```bash
+vltconfig template examples.settings:AppConfig -o /tmp/app-config.json
+```
+
+Generate a commented YAML variant or a value-free field reference:
+
+```bash
+vltconfig template examples.settings:AppConfig --format yaml -o /tmp/app-config.yaml
+vltconfig schema examples.settings:AppConfig --format markdown -o /tmp/app-config-fields.md
+```
+
+New output files are created with mode `0600`; replacing an existing file keeps
+its mode. Writes are atomic. By default, static application defaults remain in
+code. `template --include-defaults` includes only static, non-secret defaults and
+never evaluates default factories.
+
+Upload the generated base document through your normal Vault process, replace
+every `__VLTCFG_REQUIRED__` marker, and validate the stored payload:
+
+```bash
+vltconfig check examples.settings:AppConfig
+vltconfig check examples.settings:AppConfig --strict --format json
+```
+
+Unknown keys are warnings by default, which supports rolling deployments.
+`--strict` turns them into errors.
+
+Preview schema additions without writing:
+
+```bash
+vltconfig plan examples.settings:AppConfig
+vltconfig plan examples.settings:AppConfig --format json
+```
+
+Apply missing required structure after reviewing the plan:
+
+```bash
+vltconfig apply examples.settings:AppConfig
+vltconfig apply examples.settings:AppConfig --yes
+```
+
+Interactive use asks for confirmation. Non-interactive use must pass `--yes`.
+An apply always displays its redacted plan first. Missing required fields receive
+the required placeholder; existing values and unknown keys are preserved.
+
+Replacing an existing value is never implicit. Address each replacement and
+provide a JSON object through stdin or a permission-protected file:
+
+```bash
+vltconfig apply examples.settings:AppConfig \
+  --replace api_key \
+  --values-stdin \
+  --yes
+```
+
+`--values-stdin` requires `--yes` because stdin cannot also be used for an
+interactive prompt. Inline value flags such as `--set` are rejected so secrets do
+not enter shell history or process arguments. JSON output from `apply` is JSONL:
+one `plan` event followed by `result`, `noop`, or `aborted`.
+
+### CAS and update safety
+
+- `plan` is read-only and reports the current KV v2 version.
+- `apply` re-reads the payload after approval.
+- A new path is created with CAS `0`.
+- An existing path is updated with its exact current version.
+- If Vault changes after the preview, apply fails and requires a new plan.
+- Only missing required paths and explicitly addressed replacements can change.
+- A no-op apply performs no Vault write and does not create a new version.
+
+The tool deliberately does not continuously synchronize or overwrite the whole
+configuration.
+
+### CLI exit statuses
+
+| Status | Meaning |
+| --- | --- |
+| `0` | Command succeeded, including a declined or no-op apply. |
+| `1` | Schema mismatch or a plan/replacement that cannot be applied. |
+| `2` | Vault access, availability, authorization, path, response, or CAS failure. |
+| `3` | Invalid CLI usage, model reference, input document, output, or missing optional dependency. |
+
+Place global `--debug` before the command to include library traceback context.
+Upstream exception messages and configuration values remain excluded.
+
+## Python API
+
+The public imports from `vltconfig` are grouped around the same workflow:
+
+- Settings: `VaultJsonConfig`, `VaultFailurePolicy`.
+- Schema: `build_model_schema`, `ModelSchema`, `FieldSchema`, `DefaultKind`.
+- Templates: `build_template`, `render_json_template`,
+  `render_yaml_template`, `REQUIRED_PLACEHOLDER`.
+- Reference export: `export_json_schema`, `render_json_schema`,
+  `render_markdown_reference`.
+- Validation: `validate_payload`, `ValidationReport`, `Finding`,
+  `FindingCode`, `Severity`, `render_validation_report`.
+- Planning: `build_plan`, `ConfigurationPlan`, `PlanChange`,
+  `ChangeCategory`, `render_configuration_plan`.
+- Vault operations: `HvacVaultGateway`, `VersionedVaultGateway`,
+  `VersionedSecret`, `check_configuration`, `plan_configuration`,
+  `apply_configuration`, `CheckResult`, and `ApplyResult`.
+
+Schema inspection and local validation do not instantiate a settings model or
+invoke its configured sources:
+
+```python
+from vltconfig import build_model_schema, build_template, validate_payload
+
+from examples.settings import AppConfig
+
+
+schema = build_model_schema(AppConfig)
+template = build_template(schema)
+report = validate_payload(schema, template)
+
+assert report.valid is False  # Required placeholders still need real Vault values.
+```
+
+For programmatic Vault operations, construct `HvacVaultGateway` from validated
+environment settings. Callers of `apply_configuration` are responsible for their
+own authorization/confirmation UX; the CLI supplies that safety boundary:
+
+```python
+from vltconfig import HvacVaultGateway, plan_configuration
+from vltconfig.config import VaultAccess
+
+from examples.settings import AppConfig
+
+
+gateway = HvacVaultGateway(VaultAccess())
+plan = plan_configuration(AppConfig, gateway)
+assert plan.source_version is not None
+```
+
+All reports and result representations are structural and value-free. They may
+contain model names, paths, types, counts, and Vault versions, but not payload
+values.
+
+## Vault environment
+
+| Variable | Purpose |
+| --- | --- |
+| `VAULT_ADDRESS` | Vault HTTP(S) address. |
+| `VAULT_APP_NAME` | KV v2 secret path. |
+| `VAULT_MOUNT_POINT` | KV mount; defaults to `secret`. |
+| `VAULT_TOKEN` | Token authentication. |
+| `VAULT_ROLE_ID`, `VAULT_SECRET_ID` | AppRole authentication pair. |
+| `VAULT_USERNAME`, `VAULT_PASSWORD` | Userpass authentication pair. |
+| `VAULT_CACHE_DISABLED` | `true`, `1`, or `yes` disables the source cache. |
+| `VAULT_CACHE_TTL` | Non-negative cache TTL in seconds; defaults to `300`. |
+| `VAULT_CACHE_MAX_ENTRIES` | Positive cache bound; defaults to `128`. |
+
+When multiple complete authentication methods are configured, the order is
+token, AppRole, then userpass. Credential fields use redacting secret types.
+
+Only confirmed transient network/Vault-down failures are retried. The default is
+three total attempts with 2- and 4-second waits before the final attempt.
+Authentication, authorization, invalid paths, malformed responses, and CAS
+conflicts are not treated as generic retryable failures.
+
+## JSON configuration
+
+`PYDANTIC_JSON_PATH` is a directory, not a filename. The source reads
+`$PYDANTIC_JSON_PATH/config.json` as UTF-8 and requires a JSON object at the root:
+
+```bash
+export PYDANTIC_JSON_PATH="$PWD/examples/config"
+python -m examples.json_only_example
+```
+
+When `PYDANTIC_JSON_PATH` is absent, a missing built-in default file means the
+source is omitted. Once the directory is explicitly configured, a missing,
+unreadable, malformed, or non-object file raises a typed `JSONSourceError`
+subclass instead of silently falling through.
+
+## Migration to 2.0
+
+The source order, `VaultJsonConfig` import, environment aliases, and authentication
+order are preserved. The intentional breaking change is failure handling:
+
+- Configured Vault failures are strict by default. Use
+  `VaultFailurePolicy.FALLBACK` only as a temporary compatibility bridge.
+- Explicit JSON configuration errors are raised instead of being treated as an
+  empty source.
+- Retries cover only known transient failures rather than every exception.
+- Cache state is bounded and isolated per source instead of relying on mutable
+  process-wide state.
+
+Applications that previously depended on JSON or initializer values after a
+broken Vault configuration should migrate before upgrading. Remove partial Vault
+variables when Vault is intentionally absent, or explicitly opt into the fallback
+policy while correcting the deployment.
+
+Projects migrating from the pre-1.0 package name must continue to use:
+
+```python
+from vltconfig import VaultJsonConfig
+```
 
 ## Examples
 
-The repository includes practical examples in the `examples/` directory:
+- `examples/settings.py`: reusable typed model for Python and CLI examples.
+- `examples/json_only_example.py`: deterministic JSON-only loading without
+  displaying configuration values.
+- `examples/schema_workflow_example.py`: offline template and validation API.
 
-### 📝 Available Examples
-
-1. **[debug_example.py](examples/debug_example.py)** - Complete debugging setup
-   - Shows how to enable detailed TRACE logging
-   - Demonstrates custom JSON config path setup
-   - Full example with all configuration sources
-
-2. **[json_only_example.py](examples/json_only_example.py)** - JSON-only configuration
-   - Using vltconfig without Vault (local development)
-   - Shows graceful fallback when Vault is not configured
-   - Environment variable override examples
-
-### 🚀 Running Examples
+Run them from the repository after installing the project:
 
 ```bash
-# Clone the repository
-git clone https://github.com/tofuurem/vltconfig.git
-cd vltconfig
-
-# Run the debug example
-python examples/debug_example.py
-
-# Run the JSON-only example
-python examples/json_only_example.py
+python -m examples.json_only_example
+python -m examples.schema_workflow_example
 ```
 
-### 📂 Example Config Files
-
-The `examples/config/` directory contains sample `config.json` files you can use as templates:
-
-```json
-{
-  "database_url": "postgresql://localhost:5432/mydb",
-  "api_key": "your-api-key-here",
-  "debug": true,
-  "max_connections": 20
-}
-```
+Every credential and endpoint in the examples is intentionally fake. The
+examples never print settings objects or payload contents.
 
 ## Development
 
 ```bash
-# Clone repository
-git clone https://github.com/tofuurem/vltconfig.git
-cd vltconfig
-
-# Install dependencies with uv
 uv sync --group dev
+uv run pre-commit install --install-hooks
 
-# Run tests
-uv run pytest --cov=vltconfig
-
-# Run linters
+uv run pytest
 uv run ruff check .
-uv run mypy vltconfig/
+uv run ruff format --check .
+uv run mypy vltconfig tests
+uv run ty check
+uv build
 ```
 
-## Testing
+Run the disposable Vault integration suite separately:
 
 ```bash
-# Run all tests
-uv run pytest
-
-# Run with coverage
-uv run pytest --cov=vltconfig --cov-report=term-missing
-
-# Run specific test file
-uv run pytest tests/unit/test_config.py -v
+./scripts/test-vault-integration.sh
 ```
 
-## Contributing
-
-Contributions are welcome! Please feel free to submit a Pull Request.
+Repository-local plans and audit material live under ignored `docs/` and are not
+part of the published repository.
 
 ## License
 
-MIT License - see [LICENSE](LICENSE) file for details.
-
-## Links
-
-- **PyPI**: https://pypi.org/project/vltconfig/
-- **GitHub**: https://github.com/tofuurem/vltconfig
-- **Issues**: https://github.com/tofuurem/vltconfig/issues
-
-## Author
-
-**tofuurem** - [rabbit_1399@icloud.com](mailto:rabbit_1399@icloud.com)
-
----
-
-Made with ❤️ using Python and Pydantic
+MIT. See [LICENSE](LICENSE).

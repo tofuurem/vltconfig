@@ -41,12 +41,15 @@ export VLTCONFIG_INTEGRATION_VAULT_ADDRESS="http://127.0.0.1:$host_port"
 export VLTCONFIG_INTEGRATION_VAULT_ROOT_TOKEN="$root_token"
 
 if [[ "${1:-}" == "--wheel-smoke" ]]; then
-  set -- dist/vltconfig-*.whl
-  if [[ "$#" -ne 1 || ! -f "$1" ]]; then
-    echo "Expected exactly one vltconfig wheel in dist/." >&2
+  expected_version="$(
+    python -c 'import pathlib, tomllib; print(tomllib.loads(pathlib.Path("pyproject.toml").read_text())["project"]["version"])'
+  )"
+  wheel="$repo_root/dist/vltconfig-$expected_version-py3-none-any.whl"
+  if [[ ! -f "$wheel" ]]; then
+    echo "Expected the vltconfig $expected_version wheel in dist/." >&2
     exit 1
   fi
-  wheel="$repo_root/$1"
+  export VLTCONFIG_EXPECTED_VERSION="$expected_version"
   temporary_directory="$(mktemp -d)"
   wheel_environment="$temporary_directory/wheel"
   uv venv "$wheel_environment"

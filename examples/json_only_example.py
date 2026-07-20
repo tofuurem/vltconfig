@@ -1,58 +1,32 @@
-"""Use vltconfig with JSON only, without Vault configuration."""
+"""Load the example JSON source without contacting Vault or printing values."""
 
 import os
-import sys
 from pathlib import Path
 
-from loguru import logger
-from pydantic import Field
+from examples.settings import AppConfig
 
-from vltconfig import VaultJsonConfig
-
-
-class AppConfig(VaultJsonConfig):
-    """Application configuration loaded from JSON when Vault is absent."""
-
-    database_url: str = Field(
-        default="postgresql://localhost/mydb",
-        description="Database connection string",
-    )
-    api_key: str = Field(
-        default="example-api-key",
-        description="API key for external service",
-    )
-    debug: bool = Field(default=False, description="Enable debug mode")
-    max_connections: int = Field(
-        default=10,
-        description="Maximum database connections",
-    )
+_VAULT_VARIABLES = (
+    "VAULT_ADDRESS",
+    "VAULT_TOKEN",
+    "VAULT_USERNAME",
+    "VAULT_PASSWORD",
+    "VAULT_ROLE_ID",
+    "VAULT_SECRET_ID",
+    "VAULT_APP_NAME",
+    "VAULT_MOUNT_POINT",
+)
 
 
 def main() -> None:
-    """Load JSON settings and demonstrate a safe environment override."""
-    logger.remove()
-    logger.add(
-        sys.stdout,
-        level="TRACE",
-        format=(
-            "<green>{time:HH:mm:ss}</green> | "
-            "<level>{level: <8}</level> | <level>{message}</level>"
-        ),
-    )
-
+    """Load and validate local JSON while keeping configuration values private."""
+    for variable in _VAULT_VARIABLES:
+        os.environ.pop(variable, None)
     config_dir = Path(__file__).parent / "config"
     os.environ["PYDANTIC_JSON_PATH"] = str(config_dir)
 
-    config = AppConfig()
-    print(f"Loaded config from: {config_dir / 'config.json'}")
-    print(f"  database_url: {config.database_url}")
-    print("  api_key: <redacted>")
-    print(f"  debug: {config.debug}")
-    print(f"  max_connections: {config.max_connections}")
-
-    os.environ["DEBUG"] = "true"
-    overridden = AppConfig()
-    print(f"Environment override applied: debug={overridden.debug}")
+    settings = AppConfig()
+    assert len(type(settings).model_fields) == 4
+    print("Configuration loaded and validated; values were not displayed.")
 
 
 if __name__ == "__main__":

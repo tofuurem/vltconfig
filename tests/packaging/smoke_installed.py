@@ -31,7 +31,7 @@ def _run_cli(
 
 def main() -> None:
     """Verify public API, metadata, settings loading, and base CLI behavior."""
-    assert metadata.version("vltconfig") == "1.0.1"
+    assert metadata.version("vltconfig") == os.environ["VLTCONFIG_EXPECTED_VERSION"]
     distribution = metadata.distribution("vltconfig")
     scripts = {
         entry.name: entry.value

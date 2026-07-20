@@ -84,7 +84,59 @@ jobs:
       - name: Install locked dependencies
         run: uv sync --frozen --python "$PYTHON_VERSION" --group dev
       - name: Run tests
-        run: uv run --frozen --python "$PYTHON_VERSION" pytest -q
+        run: >-
+          uv run --frozen --python "$PYTHON_VERSION" pytest
+          tests/unit tests/cli tests/security tests/packaging -q --no-cov
+
+  coverage:
+    name: Coverage
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+      - name: Set up Python
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: "3.14"
+      - name: Set up uv
+        uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990 # v8.3.2
+        with:
+          version: ${{ env.UV_VERSION }}
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+      - name: Install locked dependencies
+        run: uv sync --frozen --python 3.14 --group dev
+      - name: Enforce coverage
+        run: >-
+          uv run --frozen --python 3.14 pytest
+          tests/unit tests/cli tests/security tests/packaging -q
+
+  integration:
+    name: Vault integration
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+      - name: Set up Python
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: "3.14"
+      - name: Set up uv
+        uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990 # v8.3.2
+        with:
+          version: ${{ env.UV_VERSION }}
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+      - name: Install locked dependencies
+        run: uv sync --frozen --python 3.14 --group dev
+      - name: Test against disposable Vault
+        run: ./scripts/test-vault-integration.sh
 
   python-preview:
     name: Python 3.15 preview
@@ -111,11 +163,13 @@ jobs:
       - name: Install locked dependencies
         run: uv sync --frozen --python 3.15 --group dev
       - name: Run tests
-        run: uv run --frozen --python 3.15 pytest -q
+        run: >-
+          uv run --frozen --python 3.15 pytest
+          tests/unit tests/cli tests/security tests/packaging -q --no-cov
 
   build:
     name: Build distributions
-    needs: [quality, tests]
+    needs: [quality, tests, coverage, integration]
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -141,8 +195,6 @@ jobs:
         run: uv run --frozen twine check dist/*
       - name: Test package metadata
         run: uv run --frozen pytest tests/packaging/test_metadata.py -q --no-cov
-      - name: Smoke-test installed wheel and CLI
-        run: ./scripts/smoke-wheel.sh
       - name: Upload distributions
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
@@ -150,3 +202,37 @@ jobs:
           path: dist/
           if-no-files-found: error
           retention-days: 7
+
+  artifact-smoke:
+    name: Installed artifact smoke
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+      - name: Set up Python
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: "3.11"
+      - name: Set up uv
+        uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990 # v8.3.2
+        with:
+          version: ${{ env.UV_VERSION }}
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+      - name: Install locked tools
+        run: uv sync --frozen --python 3.11 --group dev
+      - name: Download distributions
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: distributions
+          path: dist/
+      - name: Recheck downloaded metadata
+        run: uv run --frozen twine check dist/*
+      - name: Smoke-test installed wheel and optional YAML
+        run: ./scripts/smoke-wheel.sh
+      - name: Smoke-test installed CLI against disposable Vault
+        run: ./scripts/test-vault-integration.sh --wheel-smoke

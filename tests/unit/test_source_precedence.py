@@ -57,3 +57,37 @@ def test_complete_settings_source_priority_is_preserved(
 
     dotenv_path.unlink()
     assert Settings().value == "file-secret"
+
+
+@pytest.mark.unit
+def test_partial_vault_payload_is_completed_by_json(
+    clean_env: None,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """JSON fills missing fields without replacing values returned by Vault."""
+
+    def load_vault(_source: PydanticVaultSource) -> dict[str, str]:
+        return {
+            "vault_only": "from-vault",
+            "shared": "from-vault",
+        }
+
+    def load_json(_source: PydanticJSONSource) -> dict[str, str]:
+        return {
+            "json_only": "from-json",
+            "shared": "from-json",
+        }
+
+    monkeypatch.setattr(PydanticVaultSource, "__call__", load_vault)
+    monkeypatch.setattr(PydanticJSONSource, "__call__", load_json)
+
+    class Settings(VaultJsonConfig):
+        vault_only: str
+        json_only: str
+        shared: str
+
+    assert Settings().model_dump() == {
+        "vault_only": "from-vault",
+        "json_only": "from-json",
+        "shared": "from-vault",
+    }

@@ -81,11 +81,15 @@ Earlier sources have higher priority:
 Model defaults are applied by Pydantic after source resolution. This ordering is
 compatibility-sensitive.
 
-Vault is optional only when every Vault environment variable is absent. Once any
-Vault variable is present, partial configuration, authentication failure,
-authorization failure, a missing path, an invalid response, or an unavailable
-server raises a typed `VaultSourceError` subclass by default. Lower-priority JSON
-or initializer values cannot hide that failure.
+Vault is skipped when every Vault environment variable is absent. When Vault is
+configured and a read succeeds, its payload may contain only some model fields;
+JSON and the remaining lower-priority sources fill missing fields in the order
+above. Values present in Vault still take priority.
+
+A partially specified Vault connection or authentication configuration, an
+authentication or authorization failure, a missing path, an invalid response,
+or an unavailable server raises a typed `VaultSourceError` subclass by default.
+Lower-priority sources cannot hide that failure.
 
 To retain the v1 fail-open Vault behavior temporarily during migration, opt in on
 one settings class:

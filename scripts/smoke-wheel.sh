@@ -11,5 +11,18 @@ if [[ "$#" -ne 1 || ! -f "$1" ]]; then
 fi
 
 wheel="$repo_root/$1"
-uv run --isolated --no-project --with "$wheel" \
-  python -I "$repo_root/tests/packaging/smoke_installed.py"
+temporary_directory="$(mktemp -d)"
+trap 'rm -rf "$temporary_directory"' EXIT INT TERM
+
+base_environment="$temporary_directory/base"
+yaml_environment="$temporary_directory/yaml"
+
+uv venv "$base_environment"
+uv pip install --python "$base_environment/bin/python" "$wheel"
+"$base_environment/bin/python" -I "$repo_root/tests/packaging/smoke_installed.py"
+
+uv venv "$yaml_environment"
+uv pip install --python "$yaml_environment/bin/python" \
+  "$wheel" "ruamel.yaml==0.19.1"
+"$yaml_environment/bin/python" -I \
+  "$repo_root/tests/packaging/smoke_yaml_installed.py"

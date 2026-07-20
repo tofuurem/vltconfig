@@ -38,6 +38,9 @@ Homepage = "https://github.com/tofuurem/vltconfig"
 Repository = "https://github.com/tofuurem/vltconfig"
 Issues = "https://github.com/tofuurem/vltconfig/issues"
 
+[project.scripts]
+vltconfig = "vltconfig.cli:main"
+
 [project.optional-dependencies]
 yaml = ["ruamel.yaml>=0.19.1"]
 

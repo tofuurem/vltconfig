@@ -19,3 +19,15 @@ def test_typing_marker_is_packaged() -> None:
     marker = resources.files("vltconfig").joinpath("py.typed")
 
     assert marker.is_file()
+
+
+def test_console_entry_point_is_installed() -> None:
+    """The distribution exposes the documented command-line entry point."""
+    distribution = metadata.distribution("vltconfig")
+    scripts = {
+        entry.name: entry.value
+        for entry in distribution.entry_points
+        if entry.group == "console_scripts"
+    }
+
+    assert scripts["vltconfig"] == "vltconfig.cli:main"

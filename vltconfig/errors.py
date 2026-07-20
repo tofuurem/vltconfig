@@ -34,6 +34,22 @@ class ConfigurationApplyError(VltConfigError):
     """A configuration plan cannot be applied safely."""
 
 
+class ModelReferenceError(VltConfigError):
+    """A CLI model reference cannot be imported as a Pydantic model class."""
+
+
+class CLIOutputError(VltConfigError):
+    """CLI output could not be written atomically."""
+
+
+class CLIConfirmationError(VltConfigError):
+    """A mutating CLI command lacks explicit safe confirmation."""
+
+
+class ProposedValuesError(VltConfigError):
+    """A proposed-values document cannot be consumed safely."""
+
+
 class JSONSourceError(ConfigurationSourceError):
     """Base class for an explicitly configured JSON source failure."""
 

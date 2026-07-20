@@ -274,3 +274,19 @@ def test_replacing_a_parent_validates_the_complete_proposed_subtree() -> None:
         )
 
     assert gateway.write_attempts == 0
+
+
+@pytest.mark.unit
+def test_expected_preview_version_rejects_a_changed_secret_before_write() -> None:
+    """A CLI-approved preview cannot authorize a newly re-read Vault version."""
+
+    class Settings(BaseModel):
+        endpoint: str
+        token: str
+
+    gateway = RecordingGateway(payload={"endpoint": "service"}, version=9)
+
+    with pytest.raises(VaultConflictError):
+        apply_configuration(Settings, gateway, expected_version=8)
+
+    assert gateway.write_attempts == 0

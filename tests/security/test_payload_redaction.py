@@ -5,6 +5,7 @@ from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
 from copy import deepcopy
 from dataclasses import dataclass
+from pathlib import Path
 from pprint import pformat
 from typing import Any
 
@@ -12,7 +13,9 @@ import pytest
 from loguru import logger
 from pydantic import BaseModel, field_validator, model_validator
 
+from tests.cli.helpers import CLIGateway
 from vltconfig import apply_configuration
+from vltconfig.cli import EXIT_OK, run
 from vltconfig.errors import ConfigurationApplyError
 from vltconfig.planning import build_plan, render_configuration_plan
 from vltconfig.validation import render_validation_report, validate_payload
@@ -224,3 +227,52 @@ def test_addressed_apply_result_and_errors_never_expose_values() -> None:
     )
     for canary in (current_canary, proposed_canary, invalid_canary):
         assert canary not in diagnostics
+
+
+@pytest.mark.unit
+def test_apply_cli_jsonl_and_debug_channels_are_value_free(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Secret file input stays absent from CLI plan/result events and stderr."""
+    current_canary = "apply-cli-security-current-canary"
+    proposed_canary = "apply-cli-security-proposed-canary"
+    ignored_canary = "apply-cli-security-ignored-canary"
+    module_name = "vltconfig_security_apply_model"
+    (tmp_path / f"{module_name}.py").write_text(
+        "from pydantic import BaseModel\n"
+        "class Settings(BaseModel):\n"
+        "    token: str\n"
+        "    endpoint: str\n"
+    )
+    values = tmp_path / "proposed.json"
+    values.write_text(
+        '{"token":"' + proposed_canary + '","endpoint":"' + ignored_canary + '"}'
+    )
+    monkeypatch.syspath_prepend(str(tmp_path))
+    gateway = CLIGateway(
+        payload={"token": current_canary, "endpoint": current_canary},
+        version=4,
+    )
+
+    status = run(
+        [
+            "--debug",
+            "apply",
+            f"{module_name}:Settings",
+            "--replace",
+            "token",
+            "--values-file",
+            str(values),
+            "--yes",
+            "--format",
+            "json",
+        ],
+        gateway_factory=lambda: gateway,
+    )
+    captured = capsys.readouterr()
+
+    assert status == EXIT_OK
+    for canary in (current_canary, proposed_canary, ignored_canary):
+        assert canary not in captured.out + captured.err

@@ -8,7 +8,11 @@ from typing import Any
 
 from pydantic import BaseModel
 
-from vltconfig.errors import ConfigurationApplyError, VaultPathNotFoundError
+from vltconfig.errors import (
+    ConfigurationApplyError,
+    VaultConflictError,
+    VaultPathNotFoundError,
+)
 from vltconfig.planning import (
     ConfigurationPath,
     ConfigurationPlan,
@@ -267,6 +271,7 @@ def apply_configuration(
     *,
     replacement_paths: Sequence[ConfigurationPath] = (),
     proposed_values: Mapping[str, Any] | None = None,
+    expected_version: int | None = None,
 ) -> ApplyResult:
     """Apply additions and addressed replacements against one fresh CAS plan."""
     schema = target if isinstance(target, ModelSchema) else build_model_schema(target)
@@ -280,6 +285,10 @@ def apply_configuration(
         source_version = secret.version
 
     try:
+        if expected_version is not None and source_version != expected_version:
+            raise VaultConflictError(
+                "Vault changed after the approved preview; read and plan again"
+            )
         proposed = proposed_values or {}
         plan = build_plan(
             schema,
